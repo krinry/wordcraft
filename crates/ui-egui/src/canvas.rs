@@ -281,6 +281,81 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                 }
             }
         }
+        // Equation container adornment when an equation is active.
+        if let Some((eq_pos, _, display)) = wordcraft_engine::cmd::objects::selected_equation(&app.session) {
+            let eq_end = Pos { story: eq_pos.story, path: eq_pos.path.clone(), off: eq_pos.off + wordcraft_doc::para::OBJ.len_utf8() };
+            for (pi, r) in layout.selection_rects(&app.session.doc, &eq_pos, &eq_end, app.session.page_hint) {
+                if let Some(pr) = rects.get(pi) {
+                    let eq_rect =
+                        Rect::from_min_size(pos2(pr.min.x + r.x * geo.scale, pr.min.y + r.y * geo.scale), vec2(r.w * geo.scale, r.h * geo.scale));
+                    let box_rect = eq_rect.expand2(vec2(8.0, 3.0));
+                    // Subtle background and border
+                    painter.rect_filled(box_rect, 2.0, Color32::from_rgba_unmultiplied(225, 240, 255, 60));
+                    painter.rect_stroke(box_rect, 2.0, Stroke::new(1.0, Color32::from_rgb(0x8A, 0xB4, 0xF8)), egui::StrokeKind::Outside);
+
+                    // Left drag / select tab handle "[:"
+                    let handle_rect = Rect::from_min_size(pos2(box_rect.min.x - 14.0, box_rect.min.y), vec2(12.0, box_rect.height()));
+                    painter.rect_filled(handle_rect, egui::CornerRadius { nw: 2, sw: 2, ne: 0, se: 0 }, Color32::from_rgb(0xE8, 0xF0, 0xFE));
+                    painter.rect_stroke(
+                        handle_rect,
+                        egui::CornerRadius { nw: 2, sw: 2, ne: 0, se: 0 },
+                        Stroke::new(1.0, Color32::from_rgb(0x8A, 0xB4, 0xF8)),
+                        egui::StrokeKind::Outside,
+                    );
+                    let hc = handle_rect.center();
+                    for dy in [-4.0, 0.0, 4.0] {
+                        painter.circle_filled(pos2(hc.x - 1.5, hc.y + dy), 1.0, Color32::from_rgb(0x5F, 0x63, 0x68));
+                        painter.circle_filled(pos2(hc.x + 1.5, hc.y + dy), 1.0, Color32::from_rgb(0x5F, 0x63, 0x68));
+                    }
+                    let h_resp = ui.interact(handle_rect, ui.id().with("eq_handle"), Sense::click());
+                    if h_resp.hovered() {
+                        ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
+                    }
+                    if h_resp.clicked() {
+                        app.session.sel = wordcraft_engine::Selection { anchor: eq_pos.clone(), focus: eq_end.clone() };
+                    }
+
+                    // Right dropdown button "[v]"
+                    let btn_rect = Rect::from_min_size(pos2(box_rect.max.x + 2.0, box_rect.min.y), vec2(14.0, box_rect.height().max(14.0)));
+                    let b_resp = ui.interact(btn_rect, ui.id().with("eq_btn"), Sense::click());
+                    let btn_bg = if b_resp.hovered() { Color32::from_rgb(0xD2, 0xE3, 0xFC) } else { Color32::from_rgb(0xE8, 0xF0, 0xFE) };
+                    painter.rect_filled(btn_rect, 2.0, btn_bg);
+                    painter.rect_stroke(btn_rect, 2.0, Stroke::new(1.0, Color32::from_rgb(0x8A, 0xB4, 0xF8)), egui::StrokeKind::Outside);
+                    crate::icons::paint(
+                        &painter,
+                        Rect::from_center_size(btn_rect.center(), vec2(8.0, 8.0)),
+                        "dropdown",
+                        Color32::from_rgb(0x3C, 0x40, 0x43),
+                        t.accent,
+                    );
+                    egui::Popup::menu(&b_resp).show(|ui| {
+                        if ui.button(tl!("Professional")).clicked() {
+                            let _ = app.run("equation.professional", json!({}));
+                            ui.close();
+                        }
+                        if ui.button(tl!("Linear")).clicked() {
+                            let _ = app.run("equation.linear", json!({}));
+                            ui.close();
+                        }
+                        if ui.button(tl!("Normal Text")).clicked() {
+                            let _ = app.run("equation.normalText", json!({}));
+                            ui.close();
+                        }
+                        ui.separator();
+                        let toggle_lbl = if display { tl!("Change to Inline") } else { tl!("Change to Display") };
+                        if ui.button(toggle_lbl).clicked() {
+                            let _ = app.run("equation.edit", json!({"display": !display}));
+                            ui.close();
+                        }
+                        ui.separator();
+                        if ui.button(tl!("Remove Equation")).clicked() {
+                            let _ = app.run("edit.delete", json!({}));
+                            ui.close();
+                        }
+                    });
+                }
+            }
+        }
         // Caret.
         let focused = resp.has_focus() || app.canvas.focused;
         if let Some(c) = layout.caret_on(&app.session.sel.focus, app.session.page_hint)

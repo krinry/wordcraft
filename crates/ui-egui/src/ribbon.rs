@@ -1,7 +1,8 @@
 //! The ribbon: tab strip and every tab's groups. Each control runs a command by id.
 
-use egui::{Align2, Rect, Sense, Stroke, Ui, pos2, vec2};
+use egui::{Align2, Pos2, Rect, Sense, Stroke, Ui, pos2, vec2};
 use serde_json::{Value, json};
+use wordcraft_doc::para::ShapeKind;
 
 use crate::theme::{Tokens, medium, regular, semibold};
 use crate::widgets::{CONTENT_H, LABEL_H, big, color_grid, combo, group, menu_button, small, split};
@@ -11,6 +12,10 @@ pub const TABS: [&str; 11] = ["File", "Home", "Insert", "Draw", "Design", "Layou
 
 fn in_table(app: &WordApp) -> bool {
     app.session.sel.focus.path.cell().is_some()
+}
+
+fn in_equation(app: &WordApp) -> bool {
+    wordcraft_engine::cmd::objects::selected_equation(&app.session).is_some()
 }
 
 pub fn show(app: &mut WordApp, ui: &mut Ui) {
@@ -27,9 +32,12 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                     tabs.push("Table Design");
                     tabs.push("Table Layout");
                 }
+                if in_equation(app) {
+                    tabs.push("Equation Design");
+                }
                 for tab in tabs {
-                    let contextual = tab.starts_with("Table ");
-                    let shown = tl!(tab);
+                    let contextual = tab.starts_with("Table ") || tab.starts_with("Equation ");
+                    let shown = if tab == "Equation Design" { tl!("Equation") } else { tl!(tab) };
                     let w = ui.ctx().fonts_mut(|f| f.layout_no_wrap(shown.to_string(), medium(12.5), t.text).size().x) + 18.0;
                     let (r, resp) = ui.allocate_exact_size(vec2(w, 30.0), Sense::click());
                     let active = app.ui.tab == tab && !app.ui.backstage;
@@ -113,6 +121,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                         "Help" => help(app, ui),
                         "Table Design" => table_design(app, ui),
                         "Table Layout" => table_layout(app, ui),
+                        "Equation Design" | "Equation" => equation_design(app, ui),
                         _ => home(app, ui),
                     }
                 });
@@ -392,21 +401,7 @@ fn insert(app: &mut WordApp, ui: &mut Ui) {
     });
     group(ui, "Illustrations", None, app, |ui, app| {
         big(ui, app, "picture", "Pictures", "insert.picture", json!({}), false);
-        menu_button(ui, app, "shapes", Some("Shapes"), "Shapes", true, |ui, app| {
-            for (l, k) in [
-                ("Rectangle", "rectangle"),
-                ("Rounded Rectangle", "roundedRectangle"),
-                ("Oval", "ellipse"),
-                ("Triangle", "triangle"),
-                ("Diamond", "diamond"),
-                ("Line", "line"),
-                ("Arrow", "arrow"),
-                ("Star", "star"),
-                ("Heart", "heart"),
-            ] {
-                mi(ui, app, l, "insert.shape", json!({"kind": k}));
-            }
-        });
+        shapes_picker(ui, app);
         stack(ui, |ui| {
             small(ui, app, "icons", Some("Icons"), "Icons", "insert.icon", json!({}), false);
             small(ui, app, "smartArt", Some("SmartArt"), "SmartArt", "insert.smartArt", json!({}), false);
@@ -462,7 +457,10 @@ fn insert(app: &mut WordApp, ui: &mut Ui) {
         });
     });
     group(ui, "Symbols", None, app, |ui, app| {
-        big(ui, app, "equation", "Equation", "insert.equation", json!({}), false);
+        let eq_resp = big(ui, app, "equation", "Equation", "insert.equation", json!({}), false);
+        if eq_resp.clicked() {
+            app.ui.tab = "Equation Design".into();
+        }
         menu_button(ui, app, "symbol", Some("Symbol"), "Symbol", true, |ui, app| {
             egui::Grid::new("syms").show(ui, |ui| {
                 for (i, c) in [
@@ -1061,6 +1059,517 @@ fn table_layout(app: &mut WordApp, ui: &mut Ui) {
             small(ui, app, "repeatHeader", Some("Repeat Header Rows"), "Repeat Header Rows", "table.repeatHeader", json!({}), false);
             small(ui, app, "toText", Some("Convert to Text"), "Convert to Text", "table.toText", json!({}), false);
             small(ui, app, "formula", Some("Formula"), "Formula", "table.formula", json!({}), false);
+        });
+    });
+}
+
+fn shapes_picker(ui: &mut Ui, app: &mut WordApp) {
+    menu_button(ui, app, "shapes", Some("Shapes"), "Shapes", true, |ui, app| {
+        ui.set_width(260.0);
+        egui::ScrollArea::vertical().max_height(400.0).show(ui, |ui| {
+            shape_section(
+                ui,
+                app,
+                "Recently Used Shapes",
+                &[
+                    ShapeKind::Rectangle,
+                    ShapeKind::RoundedRectangle,
+                    ShapeKind::Ellipse,
+                    ShapeKind::Line,
+                    ShapeKind::Arrow,
+                    ShapeKind::Triangle,
+                    ShapeKind::Diamond,
+                    ShapeKind::Heart,
+                    ShapeKind::Star,
+                    ShapeKind::SmileyFace,
+                ],
+            );
+            shape_section(
+                ui,
+                app,
+                "Lines",
+                &[
+                    ShapeKind::Line,
+                    ShapeKind::Arrow,
+                    ShapeKind::DoubleArrow,
+                    ShapeKind::ElbowConnector,
+                    ShapeKind::ElbowArrow,
+                    ShapeKind::ElbowDoubleArrow,
+                    ShapeKind::CurvedConnector,
+                    ShapeKind::CurvedArrow,
+                    ShapeKind::CurvedDoubleArrow,
+                    ShapeKind::Curve,
+                    ShapeKind::Freeform,
+                    ShapeKind::Scribble,
+                ],
+            );
+            shape_section(
+                ui,
+                app,
+                "Rectangles",
+                &[
+                    ShapeKind::Rectangle,
+                    ShapeKind::RoundedRectangle,
+                    ShapeKind::SingleCornerSnipped,
+                    ShapeKind::TopCornersSnipped,
+                    ShapeKind::DiagonalCornersSnipped,
+                    ShapeKind::SnippedAndRounded,
+                    ShapeKind::RoundSingleCorner,
+                    ShapeKind::RoundSameSideCorner,
+                    ShapeKind::RoundDiagonalCorner,
+                ],
+            );
+            shape_section(
+                ui,
+                app,
+                "Basic Shapes",
+                &[
+                    ShapeKind::TextBox,
+                    ShapeKind::Ellipse,
+                    ShapeKind::Triangle,
+                    ShapeKind::RightTriangle,
+                    ShapeKind::Parallelogram,
+                    ShapeKind::Trapezoid,
+                    ShapeKind::Diamond,
+                    ShapeKind::Pentagon,
+                    ShapeKind::Hexagon,
+                    ShapeKind::Heptagon,
+                    ShapeKind::Octagon,
+                    ShapeKind::Decagon,
+                    ShapeKind::Dodecagon,
+                    ShapeKind::Pie,
+                    ShapeKind::Chord,
+                    ShapeKind::Teardrop,
+                    ShapeKind::Frame,
+                    ShapeKind::HalfFrame,
+                    ShapeKind::LShape,
+                    ShapeKind::DiagonalStripe,
+                    ShapeKind::Cross,
+                    ShapeKind::Plaque,
+                    ShapeKind::Cylinder,
+                    ShapeKind::Cube,
+                    ShapeKind::Bevel,
+                    ShapeKind::Donut,
+                    ShapeKind::NoSymbol,
+                    ShapeKind::BlockArc,
+                    ShapeKind::FoldedCorner,
+                    ShapeKind::SmileyFace,
+                    ShapeKind::Heart,
+                    ShapeKind::LightningBolt,
+                    ShapeKind::Sun,
+                    ShapeKind::Moon,
+                    ShapeKind::Cloud,
+                    ShapeKind::Arc,
+                    ShapeKind::DoubleBracket,
+                    ShapeKind::DoubleBrace,
+                    ShapeKind::LeftBracket,
+                    ShapeKind::RightBracket,
+                    ShapeKind::LeftBrace,
+                    ShapeKind::RightBrace,
+                ],
+            );
+            shape_section(
+                ui,
+                app,
+                "Block Arrows",
+                &[
+                    ShapeKind::Arrow,
+                    ShapeKind::LeftArrow,
+                    ShapeKind::UpArrow,
+                    ShapeKind::DownArrow,
+                    ShapeKind::LeftRightArrow,
+                    ShapeKind::UpDownArrow,
+                    ShapeKind::QuadArrow,
+                    ShapeKind::LeftRightUpArrow,
+                    ShapeKind::BentArrow,
+                    ShapeKind::UTurnArrow,
+                    ShapeKind::LeftUpArrow,
+                    ShapeKind::BentUpArrow,
+                    ShapeKind::StripedRightArrow,
+                    ShapeKind::NotchedRightArrow,
+                    ShapeKind::PentagonArrow,
+                    ShapeKind::Chevron,
+                    ShapeKind::RightArrowCallout,
+                    ShapeKind::DownArrowCallout,
+                    ShapeKind::LeftArrowCallout,
+                    ShapeKind::UpArrowCallout,
+                    ShapeKind::LeftRightArrowCallout,
+                    ShapeKind::QuadArrowCallout,
+                    ShapeKind::CircularArrow,
+                ],
+            );
+            shape_section(
+                ui,
+                app,
+                "Equation Shapes",
+                &[
+                    ShapeKind::MathPlus,
+                    ShapeKind::MathMinus,
+                    ShapeKind::MathMultiply,
+                    ShapeKind::MathDivide,
+                    ShapeKind::MathEqual,
+                    ShapeKind::MathNotEqual,
+                ],
+            );
+            shape_section(
+                ui,
+                app,
+                "Flowchart",
+                &[
+                    ShapeKind::FlowchartProcess,
+                    ShapeKind::FlowchartAlternateProcess,
+                    ShapeKind::FlowchartDecision,
+                    ShapeKind::FlowchartData,
+                    ShapeKind::FlowchartPredefinedProcess,
+                    ShapeKind::FlowchartInternalStorage,
+                    ShapeKind::FlowchartDocument,
+                    ShapeKind::FlowchartMultidocument,
+                    ShapeKind::FlowchartTerminator,
+                    ShapeKind::FlowchartPreparation,
+                    ShapeKind::FlowchartManualInput,
+                    ShapeKind::FlowchartManualOperation,
+                    ShapeKind::FlowchartConnector,
+                    ShapeKind::FlowchartOffpageConnector,
+                    ShapeKind::FlowchartCard,
+                    ShapeKind::FlowchartPunchedTape,
+                    ShapeKind::FlowchartSummingJunction,
+                    ShapeKind::FlowchartOr,
+                    ShapeKind::FlowchartCollate,
+                    ShapeKind::FlowchartSort,
+                    ShapeKind::FlowchartExtract,
+                    ShapeKind::FlowchartMerge,
+                    ShapeKind::FlowchartStoredData,
+                    ShapeKind::FlowchartDelay,
+                    ShapeKind::FlowchartSequentialData,
+                    ShapeKind::FlowchartMagneticDisk,
+                    ShapeKind::FlowchartDirectAccessStorage,
+                    ShapeKind::FlowchartDisplay,
+                ],
+            );
+            shape_section(
+                ui,
+                app,
+                "Stars and Banners",
+                &[
+                    ShapeKind::Explosion1,
+                    ShapeKind::Explosion2,
+                    ShapeKind::Star4,
+                    ShapeKind::Star,
+                    ShapeKind::Star6,
+                    ShapeKind::Star7,
+                    ShapeKind::Star8,
+                    ShapeKind::Star10,
+                    ShapeKind::Star12,
+                    ShapeKind::Star16,
+                    ShapeKind::Star24,
+                    ShapeKind::Star32,
+                    ShapeKind::UpRibbon,
+                    ShapeKind::DownRibbon,
+                    ShapeKind::CurvedUpRibbon,
+                    ShapeKind::CurvedDownRibbon,
+                    ShapeKind::VerticalScroll,
+                    ShapeKind::HorizontalScroll,
+                    ShapeKind::Wave,
+                    ShapeKind::DoubleWave,
+                ],
+            );
+            shape_section(
+                ui,
+                app,
+                "Callouts",
+                &[
+                    ShapeKind::RectangularCallout,
+                    ShapeKind::RoundedRectangularCallout,
+                    ShapeKind::OvalCallout,
+                    ShapeKind::CloudCallout,
+                    ShapeKind::LineCallout1,
+                    ShapeKind::LineCallout2,
+                    ShapeKind::LineCallout3,
+                    ShapeKind::LineCallout4,
+                    ShapeKind::LineCallout1AccentBar,
+                    ShapeKind::LineCallout2AccentBar,
+                    ShapeKind::LineCallout3AccentBar,
+                    ShapeKind::LineCallout4AccentBar,
+                ],
+            );
+            ui.separator();
+            let canvas_resp = ui.add(egui::Button::new(tl!("New Drawing Canvas")).min_size(vec2(240.0, 24.0)));
+            if canvas_resp.clicked() {
+                let _ = app.run("insert.shape", json!({"kind": "drawingCanvas"}));
+                ui.close();
+            }
+        });
+    });
+}
+
+fn shape_section(ui: &mut Ui, app: &mut WordApp, title: &str, shapes: &[ShapeKind]) {
+    let t = Tokens::get(ui.ctx());
+    ui.add_space(2.0);
+    ui.label(egui::RichText::new(tl!(title)).font(regular(11.0)).color(t.text_dim));
+    egui::Grid::new(title).spacing(vec2(2.0, 2.0)).show(ui, |ui| {
+        for (i, &k) in shapes.iter().enumerate() {
+            let (r, resp) = ui.allocate_exact_size(vec2(24.0, 24.0), Sense::click());
+            if resp.hovered() {
+                ui.painter().rect_filled(r, 2.0, t.hover);
+            }
+            let stroke_c = if resp.hovered() { t.accent_text } else { t.text };
+            let fill_c = if !k.is_line_like() { t.accent.linear_multiply(0.12) } else { egui::Color32::TRANSPARENT };
+            let inner = r.shrink(4.0);
+            for (closed, pts) in wordcraft_render::shape_preview_contours(k, inner.width(), inner.height()) {
+                let screen_pts: Vec<Pos2> = pts.into_iter().map(|(x, y)| pos2(inner.min.x + x, inner.min.y + y)).collect();
+                if closed {
+                    if !k.is_line_like() {
+                        ui.painter().add(egui::Shape::convex_polygon(screen_pts.clone(), fill_c, Stroke::NONE));
+                    }
+                    ui.painter().add(egui::Shape::closed_line(screen_pts, Stroke::new(1.0, stroke_c)));
+                } else {
+                    ui.painter().add(egui::Shape::line(screen_pts, Stroke::new(1.2, stroke_c)));
+                }
+            }
+            if resp.on_hover_text(tl!(k.label())).clicked() {
+                let _ = app.run("insert.shape", json!({"kind": k.ooxml_prst()}));
+                ui.close();
+            }
+            if i % 10 == 9 {
+                ui.end_row();
+            }
+        }
+    });
+}
+
+fn equation_design(app: &mut WordApp, ui: &mut Ui) {
+    let t = Tokens::get(ui.ctx());
+    // Tools
+    group(ui, "Tools", None, app, |ui, app| {
+        menu_button(ui, app, "equation", Some("Equation"), "Equation", true, |ui, app| {
+            for (label, eq) in [
+                ("Area of Circle", "A = \\pi r^2"),
+                ("Binomial Theorem", "(x + a)^n = \\sum_{k=0}^n \\binom{n}{k} x^k a^{n-k}"),
+                ("Expansion of a Sum", "(1 + x)^n = 1 + \\frac{nx}{1!} + \\frac{n(n-1)x^2}{2!} + \\dots"),
+                ("Fourier Series", "f(x) = a_0 + \\sum_{n=1}^\\infty (a_n \\cos \\frac{n\\pi x}{L} + b_n \\sin \\frac{n\\pi x}{L})"),
+                ("Pythagorean Theorem", "a^2 + b^2 = c^2"),
+                ("Quadratic Formula", "x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}"),
+                ("Taylor Expansion", "f(x) = \\sum_{n=0}^\\infty \\frac{f^{(n)}(a)}{n!} (x - a)^n"),
+            ] {
+                if ui.button(tl!(label)).clicked() {
+                    let _ = app.run("equation.edit", json!({"linear": eq}));
+                    ui.close();
+                }
+            }
+        });
+        stack(ui, |ui| {
+            small(ui, app, "professional", Some("Professional"), "Professional (two-dimensional display)", "equation.professional", json!({}), false);
+            small(ui, app, "linear", Some("Linear"), "Linear (one-line format)", "equation.linear", json!({}), false);
+            small(ui, app, "normalText", Some("Normal Text"), "Normal Text (non-math text in math region)", "equation.normalText", json!({}), false);
+        });
+    });
+
+    // Symbols Gallery
+    group(ui, "Symbols", None, app, |ui, app| {
+        let syms = [
+            "±", "∞", "=", "≠", "~", "×", "÷", "!", "∝", "<", "≪", ">", "≫", "≤", "≥", "∓", "≅", "≈", "≡", "∀", "∂", "√", "∛", "∜", "∪", "∩", "∅",
+            "%", "°", "Δ", "∇", "∃", "∄", "∈", "∋", "←", "↑", "→", "↓", "↔", "↕", "⇐", "⇒", "⇔", "∑", "∏", "∫", "∮", "∴", "∵", "∠", "⊥", "α", "β",
+            "γ", "δ", "ε", "θ", "λ", "μ", "π", "ρ", "σ", "φ", "ω", "Ω",
+        ];
+        egui::ScrollArea::horizontal().max_width(220.0).show(ui, |ui| {
+            egui::Grid::new("eq_sym_gallery").spacing(vec2(2.0, 2.0)).show(ui, |ui| {
+                for (i, sym) in syms.iter().enumerate() {
+                    let (r, resp) = ui.allocate_exact_size(vec2(20.0, 20.0), Sense::click());
+                    if resp.hovered() {
+                        ui.painter().rect_filled(r, 2.0, t.hover);
+                    }
+                    ui.painter().text(r.center(), Align2::CENTER_CENTER, *sym, regular(13.0), t.text);
+                    if resp.on_hover_text(*sym).clicked() {
+                        let _ = app.run("equation.insertSymbol", json!({"symbol": sym}));
+                    }
+                    if i % 3 == 2 {
+                        ui.end_row();
+                    }
+                }
+            });
+        });
+    });
+
+    // Structures
+    group(ui, "Structures", None, app, |ui, app| {
+        menu_button(ui, app, "fraction", Some("Fraction"), "Fraction", true, |ui, app| {
+            for (label, tmpl) in [
+                ("Stacked Fraction", "\\frac{x}{y}"),
+                ("Skewed Fraction", "x/y"),
+                ("Linear Fraction", "x/y"),
+                ("Small Fraction", "\\tfrac{x}{y}"),
+                ("dy/dx", "\\frac{dy}{dx}"),
+                ("Δy/Δx", "\\frac{\\Delta y}{\\Delta x}"),
+                ("∂y/∂x", "\\frac{\\partial y}{\\partial x}"),
+                ("π/2", "\\frac{\\pi}{2}"),
+            ] {
+                if ui.button(tl!(label)).clicked() {
+                    let _ = app.run("equation.insertStructure", json!({"template": tmpl}));
+                    ui.close();
+                }
+            }
+        });
+
+        menu_button(ui, app, "script", Some("Script"), "Script", true, |ui, app| {
+            for (label, tmpl) in
+                [("Superscript", "x^2"), ("Subscript", "x_1"), ("Subscript-Superscript", "x_1^2"), ("Left Subscript-Superscript", "{}_1^2 x")]
+            {
+                if ui.button(tl!(label)).clicked() {
+                    let _ = app.run("equation.insertStructure", json!({"template": tmpl}));
+                    ui.close();
+                }
+            }
+        });
+
+        menu_button(ui, app, "radical", Some("Radical"), "Radical", true, |ui, app| {
+            for (label, tmpl) in [
+                ("Square Root", "\\sqrt{x}"),
+                ("Radical with Degree", "\\sqrt[n]{x}"),
+                ("Cube Root", "\\sqrt[3]{x}"),
+                ("Square Root with Degree 2", "\\sqrt[2]{x}"),
+            ] {
+                if ui.button(tl!(label)).clicked() {
+                    let _ = app.run("equation.insertStructure", json!({"template": tmpl}));
+                    ui.close();
+                }
+            }
+        });
+
+        menu_button(ui, app, "integral", Some("Integral"), "Integral", true, |ui, app| {
+            for (label, tmpl) in [
+                ("Integral", "\\int x \\, dx"),
+                ("Integral with Limits", "\\int_{a}^{b} x \\, dx"),
+                ("Double Integral", "\\iint x \\, dx dy"),
+                ("Triple Integral", "\\iiint x \\, dx dy dz"),
+                ("Contour Integral", "\\oint x \\, ds"),
+            ] {
+                if ui.button(tl!(label)).clicked() {
+                    let _ = app.run("equation.insertStructure", json!({"template": tmpl}));
+                    ui.close();
+                }
+            }
+        });
+
+        menu_button(ui, app, "largeOperator", Some("Large\nOperator"), "Large Operator", true, |ui, app| {
+            for (label, tmpl) in [
+                ("Summation", "\\sum x"),
+                ("Summation with Limits", "\\sum_{i=1}^{n} x_i"),
+                ("Product", "\\prod x"),
+                ("Product with Limits", "\\prod_{i=1}^{n} x_i"),
+                ("Union", "\\bigcup A_i"),
+                ("Intersection", "\\bigcap A_i"),
+            ] {
+                if ui.button(tl!(label)).clicked() {
+                    let _ = app.run("equation.insertStructure", json!({"template": tmpl}));
+                    ui.close();
+                }
+            }
+        });
+
+        menu_button(ui, app, "bracket", Some("Bracket"), "Bracket", true, |ui, app| {
+            for (label, tmpl) in [
+                ("Parentheses", "(x)"),
+                ("Square Brackets", "[x]"),
+                ("Curly Brackets (Braces)", "{x}"),
+                ("Angle Brackets", "\\langle x \\rangle"),
+                ("Absolute Value (Single Bar)", "|x|"),
+                ("Double Bar (Norm)", "\\|x\\|"),
+                ("Cases", "\\begin{cases} x & \\text{if } a \\\\ y & \\text{if } b \\end{cases}"),
+            ] {
+                if ui.button(tl!(label)).clicked() {
+                    let _ = app.run("equation.insertStructure", json!({"template": tmpl}));
+                    ui.close();
+                }
+            }
+        });
+
+        menu_button(ui, app, "mathFunction", Some("Function"), "Function", true, |ui, app| {
+            for (label, tmpl) in [
+                ("sin θ", "\\sin \\theta"),
+                ("cos θ", "\\cos \\theta"),
+                ("tan θ", "\\tan \\theta"),
+                ("csc θ", "\\csc \\theta"),
+                ("sec θ", "\\sec \\theta"),
+                ("cot θ", "\\cot \\theta"),
+                ("sin⁻¹ x", "\\arcsin x"),
+                ("cos⁻¹ x", "\\arccos x"),
+                ("tan⁻¹ x", "\\arctan x"),
+                ("ln x", "\\ln x"),
+                ("log x", "\\log x"),
+            ] {
+                if ui.button(tl!(label)).clicked() {
+                    let _ = app.run("equation.insertStructure", json!({"template": tmpl}));
+                    ui.close();
+                }
+            }
+        });
+
+        menu_button(ui, app, "accent", Some("Accent"), "Accent", true, |ui, app| {
+            for (label, tmpl) in [
+                ("Dot", "\\dot{x}"),
+                ("Double Dot", "\\ddot{x}"),
+                ("Triple Dot", "\\dddot{x}"),
+                ("Hat", "\\hat{x}"),
+                ("Bar", "\\bar{x}"),
+                ("Tilde", "\\tilde{x}"),
+                ("Vector (Arrow)", "\\vec{x}"),
+                ("Prime", "x'"),
+            ] {
+                if ui.button(tl!(label)).clicked() {
+                    let _ = app.run("equation.insertStructure", json!({"template": tmpl}));
+                    ui.close();
+                }
+            }
+        });
+
+        menu_button(ui, app, "limitLog", Some("Limit and\nLog"), "Limit and Log", true, |ui, app| {
+            for (label, tmpl) in [
+                ("lim (x → 0)", "\\lim_{x \\to 0}"),
+                ("lim (x → ∞)", "\\lim_{x \\to \\infty}"),
+                ("min", "\\min(x, y)"),
+                ("max", "\\max(x, y)"),
+                ("ln", "\\ln x"),
+                ("log", "\\log_{10} x"),
+                ("log_b", "\\log_b x"),
+            ] {
+                if ui.button(tl!(label)).clicked() {
+                    let _ = app.run("equation.insertStructure", json!({"template": tmpl}));
+                    ui.close();
+                }
+            }
+        });
+
+        menu_button(ui, app, "mathOperator", Some("Operator"), "Operator", true, |ui, app| {
+            for (label, tmpl) in [
+                ("Plus-Minus (±)", "\\pm"),
+                ("Minus-Plus (∓)", "\\mp"),
+                ("Multiplication (×)", "\\times"),
+                ("Division (÷)", "\\div"),
+                ("Dot Product (·)", "\\cdot"),
+                ("Circle Plus (⊕)", "\\oplus"),
+                ("Circle Times (⊗)", "\\otimes"),
+            ] {
+                if ui.button(tl!(label)).clicked() {
+                    let _ = app.run("equation.insertStructure", json!({"template": tmpl}));
+                    ui.close();
+                }
+            }
+        });
+
+        menu_button(ui, app, "matrix", Some("Matrix"), "Matrix", true, |ui, app| {
+            for (label, tmpl) in [
+                ("1 × 2 Row Matrix", "\\begin{pmatrix} a & b \\end{pmatrix}"),
+                ("2 × 1 Column Matrix", "\\begin{pmatrix} a \\\\ b \\end{pmatrix}"),
+                ("2 × 2 Matrix", "\\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix}"),
+                ("3 × 3 Matrix", "\\begin{pmatrix} a & b & c \\\\ d & e & f \\\\ g & h & i \\end{pmatrix}"),
+                ("2 × 2 Determinant", "\\begin{vmatrix} a & b \\\\ c & d \\end{vmatrix}"),
+                ("3 × 3 Determinant", "\\begin{vmatrix} a & b & c \\\\ d & e & f \\\\ g & h & i \\end{vmatrix}"),
+            ] {
+                if ui.button(tl!(label)).clicked() {
+                    let _ = app.run("equation.insertStructure", json!({"template": tmpl}));
+                    ui.close();
+                }
+            }
         });
     });
 }

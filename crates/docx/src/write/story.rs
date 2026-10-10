@@ -387,17 +387,7 @@ impl Writer<'_> {
                 }
                 w.open("wps:spPr", &[]);
                 xfrm(w, *sw, *sh);
-                let prst = match kind {
-                    ShapeKind::Rectangle | ShapeKind::TextBox => "rect",
-                    ShapeKind::RoundedRectangle => "roundRect",
-                    ShapeKind::Ellipse => "ellipse",
-                    ShapeKind::Triangle => "triangle",
-                    ShapeKind::Diamond => "diamond",
-                    ShapeKind::Line => "line",
-                    ShapeKind::Arrow => "rightArrow",
-                    ShapeKind::Star => "star5",
-                    ShapeKind::Heart => "heart",
-                };
+                let prst = kind.ooxml_prst();
                 w.open("a:prstGeom", &[("prst", prst)]);
                 w.empty("a:avLst", &[]);
                 w.close("a:prstGeom");

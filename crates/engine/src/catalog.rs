@@ -378,6 +378,20 @@ Shape Format|Shape Styles|Shape Effects|shape.effects
 Shape Format|Text|Text Direction|shape.textDirection
 Shape Format|Text|Align Text|shape.alignText
 Shape Format|Text|Create Link|shape.link
+Equation Tools › Design|Tools|Professional|equation.professional
+Equation Tools › Design|Tools|Linear|equation.linear
+Equation Tools › Design|Tools|Normal Text|equation.normalText
+Equation Tools › Design|Structures|Fraction|equation.fraction
+Equation Tools › Design|Structures|Script|equation.script
+Equation Tools › Design|Structures|Radical|equation.radical
+Equation Tools › Design|Structures|Integral|equation.integral
+Equation Tools › Design|Structures|Large Operator|equation.largeOperator
+Equation Tools › Design|Structures|Bracket|equation.bracket
+Equation Tools › Design|Structures|Function|equation.function
+Equation Tools › Design|Structures|Accent|equation.accent
+Equation Tools › Design|Structures|Limit and Log|equation.limitLog
+Equation Tools › Design|Structures|Operator|equation.operator
+Equation Tools › Design|Structures|Matrix|equation.matrix
 Header & Footer|Navigation|Go to Header|insert.editHeader
 Header & Footer|Navigation|Go to Footer|insert.editFooter
 Header & Footer|Navigation|Previous Section|hf.previous

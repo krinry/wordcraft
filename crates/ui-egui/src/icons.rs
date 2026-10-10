@@ -417,6 +417,72 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
             pen.fcircle(10.0, 10.0, 3.5, a);
         }
         "equation" => pen.text(10.0, 10.0, 17.0, "π", a, false),
+        "fraction" => {
+            pen.text(10.0, 5.5, 9.0, "x", a, true);
+            pen.line(&[(4.0, 10.0), (16.0, 10.0)]);
+            pen.text(10.0, 14.5, 9.0, "y", c, true);
+        }
+        "script" => {
+            pen.text(7.0, 12.0, 13.0, "e", c, false);
+            pen.text(14.0, 6.0, 9.0, "x", a, true);
+        }
+        "radical" => {
+            pen.line(&[(3.0, 11.0), (5.0, 11.0), (7.0, 16.0), (10.0, 4.0), (17.0, 4.0)]);
+            pen.text(13.5, 11.0, 9.0, "x", a, false);
+        }
+        "integral" => {
+            pen.text(8.0, 10.0, 16.0, "∫", a, false);
+            pen.text(14.0, 10.0, 9.0, "dx", c, false);
+        }
+        "largeOperator" => {
+            pen.text(10.0, 10.0, 16.0, "∑", a, false);
+        }
+        "bracket" => {
+            pen.text(6.0, 10.0, 16.0, "{", a, false);
+            pen.text(14.0, 10.0, 16.0, "}", a, false);
+        }
+        "mathFunction" => {
+            pen.text(8.0, 10.0, 9.0, "sin", c, false);
+            pen.text(15.0, 10.0, 9.0, "θ", a, false);
+        }
+        "accent" => {
+            pen.text(10.0, 12.0, 12.0, "a", c, false);
+            pen.fcircle(8.0, 4.5, 1.0, a);
+            pen.fcircle(12.0, 4.5, 1.0, a);
+        }
+        "limitLog" => {
+            pen.text(10.0, 7.0, 9.0, "lim", c, true);
+            pen.line(&[(6.0, 13.0), (14.0, 13.0)]);
+        }
+        "mathOperator" => {
+            pen.text(10.0, 10.0, 15.0, "±", a, false);
+        }
+        "matrix" => {
+            pen.line(&[(4.0, 4.0), (2.0, 4.0), (2.0, 16.0), (4.0, 16.0)]);
+            pen.line(&[(16.0, 4.0), (18.0, 4.0), (18.0, 16.0), (16.0, 16.0)]);
+            pen.fcircle(7.0, 8.0, 1.2, a);
+            pen.fcircle(13.0, 8.0, 1.2, a);
+            pen.fcircle(7.0, 12.0, 1.2, a);
+            pen.fcircle(13.0, 12.0, 1.2, a);
+        }
+        "professional" => {
+            pen.text(10.0, 6.0, 9.0, "x", a, true);
+            pen.line(&[(5.0, 10.0), (15.0, 10.0)]);
+            pen.text(10.0, 14.5, 9.0, "2", c, true);
+        }
+        "linear" => {
+            pen.text(10.0, 10.0, 10.0, "x/2", c, true);
+        }
+        "normalText" => {
+            pen.text(10.0, 10.0, 11.0, "abc", c, false);
+        }
+        "drawingCanvas" => {
+            pen.rect(3.0, 3.0, 17.0, 17.0, c);
+            pen.frect(2.0, 2.0, 5.0, 5.0, a);
+            pen.frect(15.0, 2.0, 18.0, 5.0, a);
+            pen.frect(2.0, 15.0, 5.0, 18.0, a);
+            pen.frect(15.0, 15.0, 18.0, 18.0, a);
+        }
         "symbol" => pen.text(10.0, 10.0, 17.0, "Ω", c, false),
         // Draw
         "pen" => {

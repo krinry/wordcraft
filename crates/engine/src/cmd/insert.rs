@@ -22,23 +22,30 @@ pub fn specs() -> Vec<CommandSpec> {
             s.sel = Selection::caret(at);
             sel_result(s)
         }),
-        CommandSpec::new("insert.coverPage", "Cover Page", "Insert › Pages", cover_page).params(r#"{"title"?: string, "subtitle"?: string, "author"?: string}"#),
+        CommandSpec::new("insert.coverPage", "Cover Page", "Insert › Pages", cover_page)
+            .params(r#"{"title"?: string, "subtitle"?: string, "author"?: string}"#),
         CommandSpec::new("insert.table", "Table", "Insert › Tables", table).params(r#"{"rows": n, "cols": n, "style"?: string}"#),
-        CommandSpec::new("insert.picture", "Pictures", "Insert › Illustrations", picture).params(r#"{"path"?: string, "data"?: base64, "width"?: pt, "alt"?: string}"#),
+        CommandSpec::new("insert.picture", "Pictures", "Insert › Illustrations", picture)
+            .params(r#"{"path"?: string, "data"?: base64, "width"?: pt, "alt"?: string}"#),
         CommandSpec::new("insert.shape", "Shapes", "Insert › Illustrations", shape)
-            .params(r#"{"kind": "rectangle|roundedRectangle|ellipse|triangle|diamond|line|arrow|star|heart", "width"?: pt, "height"?: pt, "fill"?: "RRGGBB", "stroke"?: "RRGGBB"}"#),
+            .params(r#"{"kind"?: string, "width"?: pt, "height"?: pt, "fill"?: "RRGGBB", "stroke"?: "RRGGBB"}"#),
         CommandSpec::new("insert.textBox", "Text Box", "Insert › Text", text_box).params(r#"{"text"?: string, "width"?: pt, "height"?: pt}"#),
         CommandSpec::new("insert.link", "Link", "Insert › Links", link).key("Mod+K").params(r#"{"url": string, "text"?: string}"#),
-        CommandSpec::new("insert.removeLink", "Remove Hyperlink", "Insert › Links", |s, _| super::format::apply(s, &|c| {
-            c.link = None;
-            if c.style.as_deref() == Some("Hyperlink") {
-                c.style = None;
-            }
-        })),
+        CommandSpec::new("insert.removeLink", "Remove Hyperlink", "Insert › Links", |s, _| {
+            super::format::apply(s, &|c| {
+                c.link = None;
+                if c.style.as_deref() == Some("Hyperlink") {
+                    c.style = None;
+                }
+            })
+        }),
         CommandSpec::new("insert.bookmark", "Bookmark", "Insert › Links", bookmark).params(r#"{"name": string}"#),
-        CommandSpec::new("insert.header", "Header", "Insert › Header & Footer", |s, v| header_footer(s, v, true)).params(r#"{"text"?: string, "preset"?: "blank|blankThree|title"}"#),
-        CommandSpec::new("insert.footer", "Footer", "Insert › Header & Footer", |s, v| header_footer(s, v, false)).params(r#"{"text"?: string, "preset"?: "blank|blankThree|pageNumber"}"#),
-        CommandSpec::new("insert.pageNumber", "Page Number", "Insert › Header & Footer", page_number).params(r#"{"position"?: "top|bottom|current", "align"?: "left|center|right", "format"?: "x of y"}"#),
+        CommandSpec::new("insert.header", "Header", "Insert › Header & Footer", |s, v| header_footer(s, v, true))
+            .params(r#"{"text"?: string, "preset"?: "blank|blankThree|title"}"#),
+        CommandSpec::new("insert.footer", "Footer", "Insert › Header & Footer", |s, v| header_footer(s, v, false))
+            .params(r#"{"text"?: string, "preset"?: "blank|blankThree|pageNumber"}"#),
+        CommandSpec::new("insert.pageNumber", "Page Number", "Insert › Header & Footer", page_number)
+            .params(r#"{"position"?: "top|bottom|current", "align"?: "left|center|right", "format"?: "x of y"}"#),
         CommandSpec::new("insert.editHeader", "Edit Header", "Insert › Header & Footer › Header", |s, _| edit_hf(s, true)).pure(),
         CommandSpec::new("insert.editFooter", "Edit Footer", "Insert › Header & Footer › Footer", |s, _| edit_hf(s, false)).pure(),
         CommandSpec::new("insert.closeHeader", "Close Header and Footer", "Header & Footer", |s, _| {
@@ -70,16 +77,19 @@ pub fn specs() -> Vec<CommandSpec> {
         })
         .params(r#"{"char": string}"#),
         CommandSpec::new("insert.equation", "Equation", "Insert › Symbols", |s, v| {
-            let lin = p::str(v, "linear").unwrap_or("a^2+b^2=c^2").to_string();
+            let lin = p::str(v, "linear").unwrap_or("").to_string();
+            let display = p::bool(v, "display").unwrap_or(false);
             let props = s.typing_props();
             let at = delete_selection(s)?;
-            let end = s.doc.insert_object(&at, InlineObject::Equation { linear: lin, display: false }, &props)?;
+            let end = s.doc.insert_object(&at, InlineObject::Equation { linear: lin, display }, &props)?;
             s.sel = Selection::caret(end);
             sel_result(s)
         })
         .key("Alt+=")
-        .params(r#"{"linear"?: string}"#),
-        CommandSpec::new("insert.field", "Field", "Insert › Text › Quick Parts", field).key("Mod+F9").params(r#"{"instr": string, "result"?: string}"#),
+        .params(r#"{"linear"?: string, "display"?: bool}"#),
+        CommandSpec::new("insert.field", "Field", "Insert › Text › Quick Parts", field)
+            .key("Mod+F9")
+            .params(r#"{"instr": string, "result"?: string}"#),
         CommandSpec::new("insert.dropCap", "Drop Cap", "Insert › Text", |s, v| {
             let lines = p::u64(v, "lines").unwrap_or(3).min(10) as u8;
             super::para::fmt(s, &|p| p.drop_cap = Some(lines))
@@ -92,7 +102,13 @@ pub fn specs() -> Vec<CommandSpec> {
         }),
         CommandSpec::new("insert.wordArt", "WordArt", "Insert › Text", |s, v| {
             let text = p::str(v, "text").unwrap_or("Your text here").to_string();
-            let props = CharProps { size: Some(36.0), bold: Some(true), color: Some(TextColor::Rgb(Rgb(0x15, 0x60, 0x82))), outline: Some(false), ..Default::default() };
+            let props = CharProps {
+                size: Some(36.0),
+                bold: Some(true),
+                color: Some(TextColor::Rgb(Rgb(0x15, 0x60, 0x82))),
+                outline: Some(false),
+                ..Default::default()
+            };
             let at = delete_selection(s)?;
             let end = s.doc.insert_text(&at, &text, &props)?;
             s.sel = Selection { anchor: at, focus: end };
@@ -247,10 +263,10 @@ fn shape(s: &mut Session, v: &Value) -> CmdResult {
     let kind: ShapeKind =
         serde_json::from_value(v.get("kind").cloned().unwrap_or(json!("rectangle"))).map_err(|e| CmdError::Params(e.to_string()))?;
     let w = p::f32(v, "width").unwrap_or(108.0).clamp(4.0, 2000.0);
-    let h = p::f32(v, "height").unwrap_or(if kind == ShapeKind::Line { 1.0 } else { 72.0 }).clamp(1.0, 2000.0);
+    let h = p::f32(v, "height").unwrap_or(if kind.is_line_like() { 1.0 } else { 72.0 }).clamp(1.0, 2000.0);
     let fill = match p::str(v, "fill") {
         Some(c) => Rgb::parse(c),
-        None if kind == ShapeKind::Line => None,
+        None if kind.is_line_like() => None,
         None => Some(Rgb(0x15, 0x60, 0x82)),
     };
     let stroke = p::str(v, "stroke").and_then(Rgb::parse).or(Some(Rgb(0x0E, 0x40, 0x5A)));

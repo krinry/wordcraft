@@ -472,7 +472,8 @@ pub fn layout_para(p: &Paragraph, env: &ParaEnv) -> ParaLayout {
                             let mut eq = (*rc).clone();
                             eq.italic = true;
                             eq.font = "Cambria Math".into();
-                            b.shape_atomic(linear, start, end, &Arc::new(eq));
+                            let text = if linear.is_empty() { "Type equation here." } else { linear.as_str() };
+                            b.shape_atomic(text, start, end, &Arc::new(eq));
                         }
                         Some(InlineObject::Opaque { text, .. }) => b.shape_atomic(text, start, end, &rc),
                         _ => push(&mut b, ClKind::Marker, 0.0, 0.0),

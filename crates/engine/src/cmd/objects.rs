@@ -282,6 +282,77 @@ pub fn specs() -> Vec<CommandSpec> {
         })
         .params(r#"{"kind": string}"#)
         .when(has_shape),
+        CommandSpec::new("equation.edit", "Edit Equation", "Equation Tools › Design › Tools", equation_edit)
+            .params(r#"{"linear": string, "display"?: bool}"#),
+        CommandSpec::new("equation.professional", "Professional", "Equation Tools › Design › Tools", |s, _| {
+            set_equation_display(s, true)
+        }),
+        CommandSpec::new("equation.linear", "Linear", "Equation Tools › Design › Tools", |s, _| {
+            set_equation_display(s, false)
+        }),
+        CommandSpec::new("equation.normalText", "Normal Text", "Equation Tools › Design › Tools", |s, _| {
+            super::format::apply(s, &|c| {
+                c.italic = Some(false);
+                c.font = Some("Calibri".into());
+            })
+        }),
+        CommandSpec::new("equation.insertSymbol", "Insert Symbol", "Equation Tools › Design › Symbols", |s, v| {
+            let sym = p::req_str(v, "symbol")?;
+            insert_into_equation(s, sym)
+        })
+        .params(r#"{"symbol": string}"#),
+        CommandSpec::new("equation.insertStructure", "Insert Structure", "Equation Tools › Design › Structures", |s, v| {
+            let kind = p::req_str(v, "kind")?;
+            let snippet = match kind {
+                "fraction" => "(x)/(y)",
+                "script" => "x^{2}",
+                "radical" => "√(x)",
+                "integral" => "∫ x dx",
+                "largeOperator" => "∑ x",
+                "bracket" => "(x)",
+                "function" => "sin(x)",
+                "accent" => "ẋ",
+                "limitLog" => "lim(x)",
+                "operator" => "±",
+                "matrix" => "[a, b; c, d]",
+                _ => "(x)",
+            };
+            insert_into_equation(s, snippet)
+        })
+        .params(r#"{"kind": string}"#),
+        CommandSpec::new("equation.fraction", "Fraction", "Equation Tools › Design › Structures", |s, _| {
+            insert_into_equation(s, "(x)/(y)")
+        }),
+        CommandSpec::new("equation.script", "Script", "Equation Tools › Design › Structures", |s, _| {
+            insert_into_equation(s, "x^{2}")
+        }),
+        CommandSpec::new("equation.radical", "Radical", "Equation Tools › Design › Structures", |s, _| {
+            insert_into_equation(s, "√(x)")
+        }),
+        CommandSpec::new("equation.integral", "Integral", "Equation Tools › Design › Structures", |s, _| {
+            insert_into_equation(s, "∫ x dx")
+        }),
+        CommandSpec::new("equation.largeOperator", "Large Operator", "Equation Tools › Design › Structures", |s, _| {
+            insert_into_equation(s, "∑ x")
+        }),
+        CommandSpec::new("equation.bracket", "Bracket", "Equation Tools › Design › Structures", |s, _| {
+            insert_into_equation(s, "(x)")
+        }),
+        CommandSpec::new("equation.function", "Function", "Equation Tools › Design › Structures", |s, _| {
+            insert_into_equation(s, "sin(x)")
+        }),
+        CommandSpec::new("equation.accent", "Accent", "Equation Tools › Design › Structures", |s, _| {
+            insert_into_equation(s, "ẋ")
+        }),
+        CommandSpec::new("equation.limitLog", "Limit and Log", "Equation Tools › Design › Structures", |s, _| {
+            insert_into_equation(s, "lim(x)")
+        }),
+        CommandSpec::new("equation.operator", "Operator", "Equation Tools › Design › Structures", |s, _| {
+            insert_into_equation(s, "±")
+        }),
+        CommandSpec::new("equation.matrix", "Matrix", "Equation Tools › Design › Structures", |s, _| {
+            insert_into_equation(s, "[a, b; c, d]")
+        }),
     ]
 }
 
@@ -307,6 +378,83 @@ pub fn selected(s: &Session) -> Option<(Pos, InlineObject)> {
         }
     }
     None
+}
+
+/// The first equation in the selection, or just before a collapsed caret.
+pub fn selected_equation(s: &Session) -> Option<(Pos, String, bool)> {
+    let (a, b) = s.sel.ordered();
+    let story = a.story;
+    let paths = if a == b { vec![a.path.clone()] } else { s.doc.paths_between(&a, &b) };
+    for path in paths {
+        let Some(p) = s.doc.para(story, &path) else { continue };
+        for off in p.object_offsets() {
+            let inside = if a == b {
+                off + wordcraft_doc::para::OBJ.len_utf8() == a.off || off == a.off
+            } else {
+                (path != a.path || off >= a.off) && (path != b.path || off < b.off)
+            };
+            if !inside {
+                continue;
+            }
+            if let Some(InlineObject::Equation { linear, display }) = p.object_at(off) {
+                return Some((Pos { story, path: path.clone(), off }, linear.clone(), *display));
+            }
+        }
+    }
+    None
+}
+
+fn equation_edit(s: &mut Session, v: &Value) -> CmdResult {
+    let linear = p::req_str(v, "linear")?.to_string();
+    let display = p::bool(v, "display");
+    if let Some((pos, _, _)) = selected_equation(s) {
+        let para = s.doc.para_mut(pos.story, &pos.path)?;
+        if let Some(InlineObject::Equation { linear: l, display: d }) = para.object_at_mut(pos.off) {
+            *l = linear;
+            if let Some(disp) = display {
+                *d = disp;
+            }
+        }
+        para.touch();
+        sel_result(s)
+    } else {
+        let props = s.typing_props();
+        let at = super::delete_selection(s)?;
+        let end = s.doc.insert_object(&at, InlineObject::Equation { linear, display: display.unwrap_or(false) }, &props)?;
+        s.sel = Selection::caret(end);
+        sel_result(s)
+    }
+}
+
+fn set_equation_display(s: &mut Session, display: bool) -> CmdResult {
+    if let Some((pos, _, _)) = selected_equation(s) {
+        let para = s.doc.para_mut(pos.story, &pos.path)?;
+        if let Some(InlineObject::Equation { display: d, .. }) = para.object_at_mut(pos.off) {
+            *d = display;
+        }
+        para.touch();
+        sel_result(s)
+    } else {
+        Err(CmdError::Disabled("no equation selected".into()))
+    }
+}
+
+fn insert_into_equation(s: &mut Session, text: &str) -> CmdResult {
+    if let Some((pos, _, _)) = selected_equation(s) {
+        let para = s.doc.para_mut(pos.story, &pos.path)?;
+        if let Some(InlineObject::Equation { linear, .. }) = para.object_at_mut(pos.off) {
+            if linear.is_empty() {
+                *linear = text.to_string();
+            } else {
+                linear.push_str(text);
+            }
+        }
+        para.touch();
+        sel_result(s)
+    } else {
+        super::type_text(s, text)?;
+        sel_result(s)
+    }
 }
 
 fn obj_size(o: &InlineObject) -> (f32, f32) {
