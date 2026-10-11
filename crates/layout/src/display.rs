@@ -145,7 +145,7 @@ fn item(doc: &Document, it: &Placed, opts: &DisplayOptions, alpha: f32, out: &mu
             alpha,
         }),
         Placed::Image { rect, media, crop, .. } => out.push(Draw::Image { rect: *rect, media: media.clone(), crop: *crop, alpha }),
-        Placed::Shape { rect, kind, fill, stroke, stroke_width } => {
+        Placed::Shape { rect, kind, fill, stroke, stroke_width, .. } => {
             out.push(Draw::Shape { rect: *rect, kind: *kind, fill: *fill, stroke: *stroke, stroke_width: *stroke_width })
         }
         Placed::Cell { .. } => {}
@@ -252,6 +252,41 @@ fn lines(
         let mut k = line.c0;
         while k < line.c1 {
             let Some(c) = pl.clusters.get(k) else { break };
+            if let ClKind::Equation(ei) = c.kind {
+                // The whole equation: runs and rules positioned from its box.
+                let cx = x + line.xs.get(k - line.c0).copied().unwrap_or(0.0);
+                if let Some(mb) = pl.eq_boxes.get(ei) {
+                    let color = pl.styles.get(c.style as usize).map(|st| text_color(&st.rc.color, None)).unwrap_or(Rgb::BLACK);
+                    let color = if mb.placeholder { Rgb(0x8A, 0x8A, 0x8A) } else { color };
+                    for r in &mb.runs {
+                        out.push(Draw::Glyphs {
+                            face: r.face,
+                            size: r.size,
+                            glyphs: r.glyphs.iter().map(|(gid, dx, dy)| (*gid, cx + r.x + dx, base + r.baseline + dy)).collect(),
+                            color,
+                            alpha,
+                            synth_bold: r.bold,
+                            synth_italic: r.italic,
+                            text: r.text.clone(),
+                            link: None,
+                        });
+                    }
+                    for rule in &mb.rules {
+                        out.push(Draw::Line {
+                            x0: cx + rule.x0,
+                            y0: base + rule.y0,
+                            x1: cx + rule.x1,
+                            y1: base + rule.y1,
+                            width: rule.width,
+                            color,
+                            stroke: Stroke::Solid,
+                            alpha,
+                        });
+                    }
+                }
+                k += 1;
+                continue;
+            }
             let si = c.style;
             let Some(st) = pl.styles.get(si as usize) else {
                 k += 1;
@@ -262,7 +297,7 @@ fn lines(
             let run_start = k;
             while k < line.c1 {
                 let Some(c) = pl.clusters.get(k) else { break };
-                if c.style != si {
+                if c.style != si || matches!(c.kind, ClKind::Equation(_)) {
                     break;
                 }
                 let cx = x + line.xs.get(k - line.c0).copied().unwrap_or(0.0);

@@ -31,14 +31,18 @@ fn substitutes(family: &str) -> &'static [&'static str] {
     const ARIAL: &[&str] = &["Liberation Sans", "Helvetica", "Helvetica Neue", "Arimo", "Source Sans 3"];
     const TIMES: &[&str] = &["Liberation Serif", "Times", "Tinos", "Source Serif 4"];
     const SYMBOL: &[&str] = &["Apple Symbols", "Segoe UI Symbol", "DejaVu Sans", "Noto Sans Symbols", "Source Sans 3"];
+    /// Math faces: Cambria Math (ships with Word) first, then the open maths fonts, then the
+    /// faces that cover most operators. The equation layouter also shapes per-character
+    /// fallbacks, so a face missing one symbol still draws it.
+    const MATH: &[&str] = &["Cambria Math", "STIX Two Math", "Noto Sans Math", "DejaVu Sans", "Source Sans 3"];
     let f = family.to_ascii_lowercase();
     match f.as_str() {
+        "cambria math" => MATH,
         "arial" | "helvetica" | "arial nova" => ARIAL,
         "times new roman" | "times" => TIMES,
         "courier new" | "courier" | "consolas" | "lucida console" | "cascadia code" | "cascadia mono" => MONO,
         "symbol" | "wingdings" | "segoe ui symbol" | "webdings" => SYMBOL,
         "cambria"
-        | "cambria math"
         | "georgia"
         | "garamond"
         | "book antiqua"
@@ -85,6 +89,12 @@ pub fn resolve(family: &str, bold: bool, italic: bool) -> Resolved {
     let r = Resolved { synth_bold: bold && face.weight < 600.0, synth_italic: italic && !face.italic, substituted, face: FaceRef::of(&face) };
     cache.lock().unwrap_or_else(|e| e.into_inner()).insert(key, r);
     r
+}
+
+/// The face operators, digits and math symbols are drawn in: Cambria Math when the document's
+/// font is available, else the first installed maths face (`resolve("Cambria Math", …)`).
+pub fn math_face() -> FaceRef {
+    resolve("Cambria Math", false, false).face
 }
 
 /// The standard Unicode character for a Symbol or Wingdings character stored the way Word stores

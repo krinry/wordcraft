@@ -11,6 +11,7 @@
 pub mod display;
 pub mod fields;
 pub mod hit;
+pub mod math;
 pub mod para;
 mod table;
 
@@ -88,6 +89,9 @@ pub enum Placed {
         fill: Option<Rgb>,
         stroke: Option<Rgb>,
         stroke_width: f32,
+        story: StoryRef,
+        path: Path,
+        off: usize,
     },
     /// A table cell's area (for hit testing and cell selection).
     Cell {
@@ -916,9 +920,16 @@ fn place_para(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, block: usize, 
                     InlineObject::Image { media, crop, .. } => {
                         Placed::Image { rect, media: media.clone(), crop: *crop, story: StoryRef::Body, path: Path(vec![block as u32]), off: c.start }
                     }
-                    InlineObject::Shape { kind, fill, stroke, stroke_width, .. } => {
-                        Placed::Shape { rect, kind: *kind, fill: *fill, stroke: *stroke, stroke_width: *stroke_width }
-                    }
+                    InlineObject::Shape { kind, fill, stroke, stroke_width, .. } => Placed::Shape {
+                        rect,
+                        kind: *kind,
+                        fill: *fill,
+                        stroke: *stroke,
+                        stroke_width: *stroke_width,
+                        story: StoryRef::Body,
+                        path: Path(vec![block as u32]),
+                        off: c.start,
+                    },
                     _ => continue,
                 };
                 if float.wrap == Wrap::BehindText {

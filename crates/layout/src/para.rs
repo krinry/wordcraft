@@ -46,6 +46,8 @@ pub enum ClKind {
     ColumnBreak,
     /// Inline object with its index in `Paragraph::objects`.
     Object(usize),
+    /// An equation, with its index in `ParaLayout::eq_boxes`.
+    Equation(usize),
     /// Zero-width marker (bookmark, comment anchor) or hidden text.
     Marker,
 }
@@ -66,6 +68,8 @@ pub struct Cluster {
     pub break_after: bool,
     /// Height above the baseline for objects (images), points.
     pub obj_h: f32,
+    /// Height below the baseline for equations (their box extends under the line), points.
+    pub below: f32,
     /// The cluster is a decimal separator (decimal tabs align on it).
     pub dot: bool,
 }
@@ -138,6 +142,8 @@ pub struct ParaLayout {
     pub drop_cap: Option<(usize, u8, f32)>,
     /// Clusters after which the line may break with a hyphen (soft hyphens, auto hyphenation), sorted.
     pub hyph_after: Vec<u32>,
+    /// Laid-out equations in this paragraph, by `ClKind::Equation` index.
+    pub eq_boxes: Vec<crate::math::MathBox>,
 }
 
 /// Inputs that change a paragraph's layout beyond its own content.
@@ -177,6 +183,7 @@ struct Builder<'a> {
     style_index: std::collections::HashMap<(String, u32, bool), u16>,
     glyphs: Vec<Glyph>,
     clusters: Vec<Cluster>,
+    eq_boxes: Vec<crate::math::MathBox>,
 }
 
 impl<'a> Builder<'a> {
@@ -287,6 +294,7 @@ impl<'a> Builder<'a> {
                     g1: if kind == ClKind::Marker { g0 } else { g1 },
                     break_after: false,
                     obj_h: 0.0,
+                    below: 0.0,
                     dot: s == "." || s == ",",
                 });
             }
@@ -311,6 +319,7 @@ impl<'a> Builder<'a> {
                 g1: g,
                 break_after: false,
                 obj_h: 0.0,
+                below: 0.0,
                 dot: false,
             });
             return;
@@ -326,7 +335,7 @@ impl<'a> Builder<'a> {
         let g0 = first.g0;
         let style = first.style;
         let g1 = added.last().map(|c| c.g1).unwrap_or(g0);
-        self.clusters.push(Cluster { start, end, adv: x, kind: ClKind::Text, style, g0, g1, break_after: false, obj_h: 0.0, dot: false });
+        self.clusters.push(Cluster { start, end, adv: x, kind: ClKind::Text, style, g0, g1, break_after: false, obj_h: 0.0, below: 0.0, dot: false });
     }
 }
 
@@ -353,7 +362,7 @@ pub fn layout_para(p: &Paragraph, env: &ParaEnv) -> ParaLayout {
             None => Arc::new(doc.styles.resolve_char(para_style, c)),
         }
     };
-    let mut b = Builder { env, styles: Vec::new(), style_index: Default::default(), glyphs: Vec::new(), clusters: Vec::new() };
+    let mut b = Builder { env, styles: Vec::new(), style_index: Default::default(), glyphs: Vec::new(), clusters: Vec::new(), eq_boxes: Vec::new() };
     let mark_rc = resolve(&p.mark);
     let mark_style = b.style(&mark_rc, None, false);
     let mut has_page_fields = false;
@@ -386,6 +395,7 @@ pub fn layout_para(p: &Paragraph, env: &ParaEnv) -> ParaLayout {
                     g1: g,
                     break_after: false,
                     obj_h: 0.0,
+                    below: 0.0,
                     dot: false,
                 });
             }
@@ -427,7 +437,7 @@ pub fn layout_para(p: &Paragraph, env: &ParaEnv) -> ParaLayout {
             let si = b.style(&rc, None, false);
             let g = b.glyphs.len() as u32;
             let push = |b: &mut Builder, kind: ClKind, adv: f32, h: f32| {
-                b.clusters.push(Cluster { start, end, adv, kind, style: si, g0: g, g1: g, break_after: false, obj_h: h, dot: false })
+                b.clusters.push(Cluster { start, end, adv, kind, style: si, g0: g, g1: g, break_after: false, obj_h: h, below: 0.0, dot: false })
             };
             match c {
                 '\t' => push(&mut b, ClKind::Tab, 0.0, 0.0),
@@ -468,13 +478,27 @@ pub fn layout_para(p: &Paragraph, env: &ParaEnv) -> ParaLayout {
                             b.shape_atomic(&num, start, end, &Arc::new(sup));
                             notes.push((b.clusters.len().saturating_sub(1), *id));
                         }
-                        Some(InlineObject::Equation { linear, .. }) => {
-                            let mut eq = (*rc).clone();
-                            eq.italic = true;
-                            eq.font = "Cambria Math".into();
-                            let text = if linear.is_empty() { "Type equation here." } else { linear.as_str() };
-                            b.shape_atomic(text, start, end, &Arc::new(eq));
-                        }
+                        Some(InlineObject::Equation { linear, .. }) => match crate::math::layout_math(linear, &rc) {
+                            Some(mb) => {
+                                // One cluster for the whole equation: the box's width and height
+                                // drive the line; `display` draws the runs and rules.
+                                let idx = b.eq_boxes.len();
+                                if idx < 512 {
+                                    b.eq_boxes.push(mb.clone());
+                                }
+                                push(&mut b, ClKind::Equation(idx), mb.width, mb.ascent);
+                                if let Some(c) = b.clusters.last_mut() {
+                                    c.below = mb.descent;
+                                }
+                            }
+                            None => {
+                                // Not maths we can stack: draw the linear text on one line.
+                                let mut eq = (*rc).clone();
+                                eq.italic = true;
+                                eq.font = "Cambria Math".into();
+                                b.shape_atomic(linear, start, end, &Arc::new(eq));
+                            }
+                        },
                         Some(InlineObject::Opaque { text, .. }) => b.shape_atomic(text, start, end, &rc),
                         _ => push(&mut b, ClKind::Marker, 0.0, 0.0),
                     }
@@ -493,7 +517,7 @@ pub fn layout_para(p: &Paragraph, env: &ParaEnv) -> ParaLayout {
         }
     }
     for c in &mut b.clusters {
-        c.break_after = opps.contains(&c.end) || matches!(c.kind, ClKind::Object(_) | ClKind::Tab);
+        c.break_after = opps.contains(&c.end) || matches!(c.kind, ClKind::Object(_) | ClKind::Equation(_) | ClKind::Tab);
     }
 
     // List label.
@@ -543,6 +567,7 @@ pub fn layout_para(p: &Paragraph, env: &ParaEnv) -> ParaLayout {
         issues: if env.proofing { proof_issues(p) } else { Vec::new() },
         drop_cap,
         hyph_after: Vec::new(),
+        eq_boxes: b.eq_boxes,
     };
     pl.hyph_after = hyphenation_points(p, &pl, env.doc.settings.auto_hyphenation && !pl.rp.suppress_hyphens);
     for k in pl.hyph_after.clone() {
@@ -836,6 +861,9 @@ fn break_lines(pl: &mut ParaLayout, env: &ParaEnv, mark_style: u16, suffix: Opti
             if let Some(st) = pl.styles.get(c.style as usize) {
                 let (a, d) = if matches!(c.kind, ClKind::Object(_)) && c.obj_h > 0.0 {
                     (c.obj_h, 0.0)
+                } else if matches!(c.kind, ClKind::Equation(_)) {
+                    // The equation's box sets the line's height, above and below the axis.
+                    (c.obj_h.max(st.ascent * 0.5), c.below.max(st.descent * 0.5))
                 } else {
                     (st.ascent + st.shift.max(0.0), st.descent + (-st.shift).max(0.0))
                 };

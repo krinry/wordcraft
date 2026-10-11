@@ -38,6 +38,14 @@ pub struct CanvasState {
     pub want_focus: bool,
     pub context_issue: Option<serde_json::Value>,
     pub context_synonyms: Option<serde_json::Value>,
+    /// Shape tool armed from the ribbon: the next canvas drag draws it (Esc cancels).
+    pub shape_tool: Option<wordcraft_doc::para::ShapeKind>,
+    /// Drawing in progress: page index and the start point in page coordinates.
+    pub drawing: Option<(usize, f32, f32)>,
+    /// A move/resize drag on a selected object.
+    pub obj_drag: Option<crate::shapes::ObjDrag>,
+    /// Cursor the object interaction wants this frame.
+    pub obj_cursor: Option<egui::CursorIcon>,
 }
 
 impl Default for CanvasState {
@@ -60,6 +68,10 @@ impl Default for CanvasState {
             want_focus: true,
             context_issue: None,
             context_synonyms: None,
+            shape_tool: None,
+            drawing: None,
+            obj_drag: None,
+            obj_cursor: None,
         }
     }
 }
@@ -356,6 +368,9 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                 }
             }
         }
+        // Shape-tool preview and object selection adornment.
+        crate::shapes::draw(app, ui, &rects, &layout, geo.scale);
+        crate::shapes::size_tip(app, ui);
         // Caret.
         let focused = resp.has_focus() || app.canvas.focused;
         if let Some(c) = layout.caret_on(&app.session.sel.focus, app.session.page_hint)
@@ -399,7 +414,20 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
         });
     }
     app.canvas.focused = resp.has_focus();
-    mouse(app, ui, &resp, &rects, &layout, geo.scale);
+    // Escape cancels the shape tool, a drawing in progress or an object drag.
+    if resp.has_focus()
+        && ui.input(|i| i.key_pressed(egui::Key::Escape))
+        && (app.canvas.shape_tool.is_some() || app.canvas.drawing.is_some() || app.canvas.obj_drag.is_some())
+    {
+        app.canvas.shape_tool = None;
+        app.canvas.drawing = None;
+        app.canvas.obj_drag = None;
+    }
+    // Object tools (shape drawing, moving, resizing) take the pointer from text editing.
+    let obj_busy = crate::shapes::interact(app, ui, &resp, &rects, &layout, geo.scale);
+    if !obj_busy {
+        mouse(app, ui, &resp, &rects, &layout, geo.scale);
+    }
     // Right-click: move the caret there (unless inside the selection), then the context menu.
     if resp.secondary_clicked()
         && let Some(p) = resp.interact_pointer_pos()
@@ -415,7 +443,10 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
     }
     resp.context_menu(|ui| context_menu(app, ui));
     if resp.hovered() {
-        ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
+        match app.canvas.obj_cursor {
+            Some(c) => ui.ctx().set_cursor_icon(c),
+            None => ui.ctx().set_cursor_icon(egui::CursorIcon::Text),
+        }
     }
     if app.canvas.focused {
         crate::keys::canvas_events(app, ui.ctx());

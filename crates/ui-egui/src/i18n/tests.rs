@@ -119,7 +119,7 @@ fn every_tab_and_command_is_translated() {
     let universal = |s: &str| !s.chars().any(char::is_alphabetic);
     let mut missing = Vec::new();
     for l in Lang::all().filter(|l| *l != Lang::EN) {
-        let tabs = crate::ribbon::TABS.iter().chain(&["Table Design", "Table Layout"]).copied();
+        let tabs = crate::ribbon::TABS.iter().chain(&["Table Design", "Table Layout", "Shape Format"]).copied();
         let commands = session.registry.all().iter().flat_map(|spec| std::iter::once(spec.label).chain(spec.location.split(" › ")));
         for s in tabs.chain(commands).filter(|s| !s.is_empty() && !universal(s)) {
             if !has(l, s) {

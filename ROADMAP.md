@@ -58,8 +58,9 @@ the icon art).
 | References (TOC, citations APA/MLA/Chicago/IEEE, bibliography, index, figures, cross-refs, TOA) | Working first versions | 60% |
 | Review (spelling, grammar, thesaurus, comments, track changes, compare, protect) | Good; comment balloons in the margin; no track-changes balloons | 75% |
 | Mailings (mail merge, rules, preview, envelopes, labels) | Working | 70% |
-| Pictures & shapes (insert, size, crop, recolour, effects, styles, float position) | Text wraps around floats (rectangular); text boxes render their text; no tight/contour wrap, no rotation handles | 55% |
-| Draw tab (ink), SmartArt, charts, 3D models, equations editor | Not started / linear equations only | 5% |
+| Pictures & shapes (insert, size, crop, recolour, effects, styles, float position) | Text wraps around floats (rectangular); text boxes render their text; drag-to-draw shapes with move/resize handles on the canvas; no tight/contour wrap, no rotation handles | 65% |
+| Equations (linear source, professional 2D layout) | Fractions, radicals, scripts, limits, accents, matrices; Cambria Math substitution; plain-text fallback | 60% |
+| Draw tab (ink), SmartArt, charts, 3D models | Not started | 5% |
 | File formats: DOCX read/write | Good (Word opens our files); charts/SmartArt/OLE dropped; untested on a real-world corpus | 75% |
 | File formats: PDF, ODT, RTF, HTML, Markdown, TXT | Working | 70% |
 | View modes (print, web, draft, read, focus, zoom, navigation pane) | Working | 70% |
@@ -76,7 +77,7 @@ the icon art).
    grouping, z-order polish, track-changes balloons and formatting revisions.
 3. **Draw tab / ink** (≈15 h).
 4. **Charts (own renderer) and SmartArt-style diagrams** (≈20 h).
-5. **Equation editor (OMML read/write, 2D layout)** (≈15 h).
+5. **Equation editor (OMML read/write)** (≈10 h; professional 2D layout done).
 6. **Dialog depth**: every Word dialog with all its options (Font, Paragraph, Tabs, Borders and
    Shading, Page Setup, Styles, Columns, Index/TOC options, Mail Merge wizard, Options panes) (≈20 h).
 7. **Accessibility (screen readers), localisation, RTL and complex scripts** (≈15 h).

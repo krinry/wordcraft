@@ -25,6 +25,7 @@ pub mod keys;
 pub mod panes;
 pub mod previews;
 pub mod ribbon;
+pub mod shapes;
 pub mod theme;
 pub mod widgets;
 pub mod window_geometry;

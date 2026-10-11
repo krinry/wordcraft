@@ -28,7 +28,7 @@ pub fn specs() -> Vec<CommandSpec> {
         CommandSpec::new("insert.picture", "Pictures", "Insert › Illustrations", picture)
             .params(r#"{"path"?: string, "data"?: base64, "width"?: pt, "alt"?: string}"#),
         CommandSpec::new("insert.shape", "Shapes", "Insert › Illustrations", shape)
-            .params(r#"{"kind"?: string, "width"?: pt, "height"?: pt, "fill"?: "RRGGBB", "stroke"?: "RRGGBB"}"#),
+            .params(r#"{"kind"?: string, "width"?: pt, "height"?: pt, "fill"?: "RRGGBB", "stroke"?: "RRGGBB", "x"?: pt, "y"?: pt, "anchor"?: "page|margin|paragraph", "wrap"?: "square|inline"}"#),
         CommandSpec::new("insert.textBox", "Text Box", "Insert › Text", text_box).params(r#"{"text"?: string, "width"?: pt, "height"?: pt}"#),
         CommandSpec::new("insert.link", "Link", "Insert › Links", link).key("Mod+K").params(r#"{"url": string, "text"?: string}"#),
         CommandSpec::new("insert.removeLink", "Remove Hyperlink", "Insert › Links", |s, _| {
@@ -78,7 +78,11 @@ pub fn specs() -> Vec<CommandSpec> {
         .params(r#"{"char": string}"#),
         CommandSpec::new("insert.equation", "Equation", "Insert › Symbols", |s, v| {
             let lin = p::str(v, "linear").unwrap_or("").to_string();
-            let display = p::bool(v, "display").unwrap_or(false);
+            if lin.len() > 8192 {
+                return Err(CmdError::Params("equation is too long".into()));
+            }
+            // Word's equation is professional (two-dimensional) from the start.
+            let display = p::bool(v, "display").unwrap_or(true);
             let props = s.typing_props();
             let at = delete_selection(s)?;
             let end = s.doc.insert_object(&at, InlineObject::Equation { linear: lin, display }, &props)?;
@@ -270,10 +274,28 @@ fn shape(s: &mut Session, v: &Value) -> CmdResult {
         None => Some(Rgb(0x15, 0x60, 0x82)),
     };
     let stroke = p::str(v, "stroke").and_then(Rgb::parse).or(Some(Rgb(0x0E, 0x40, 0x5A)));
+    // Drawn on the canvas (x and y given): a floating shape where the pointer drew it, the way
+    // Word drops a shape you drag out. Without them the shape goes inline at the caret.
+    let (x, y) = (p::f32(v, "x"), p::f32(v, "y"));
+    let anchor = match p::str(v, "anchor") {
+        Some("page") => wordcraft_doc::para::Anchor::Page,
+        Some("paragraph") => wordcraft_doc::para::Anchor::Paragraph,
+        _ => wordcraft_doc::para::Anchor::Margin,
+    };
+    let float = match (x, y) {
+        (Some(x), Some(y)) => Float {
+            wrap: if p::str(v, "wrap").is_some_and(|w| w == "inline") { Wrap::Inline } else { Wrap::Square },
+            h_rel: anchor,
+            v_rel: anchor,
+            x: x.clamp(-5000.0, 5000.0),
+            y: y.clamp(-5000.0, 5000.0),
+            dist: 0.0,
+        },
+        _ => Float { wrap: Wrap::Inline, ..Default::default() },
+    };
     let props = s.typing_props();
     let at = delete_selection(s)?;
-    let obj =
-        InlineObject::Shape { kind, w, h, fill, stroke, stroke_width: 1.0, float: Float { wrap: Wrap::Inline, ..Default::default() }, story: None };
+    let obj = InlineObject::Shape { kind, w, h, fill, stroke, stroke_width: 1.0, float, story: None };
     let end = s.doc.insert_object(&at, obj, &props)?;
     s.sel = Selection { anchor: at, focus: end };
     sel_result(s)

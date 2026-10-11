@@ -200,14 +200,19 @@ pub fn specs() -> Vec<CommandSpec> {
         CommandSpec::new("arrange.position", "Position", "Layout › Arrange", |s, v| {
             let preset = p::str(v, "preset").unwrap_or("middleCenter").to_string();
             let (x, y) = (p::f32(v, "x"), p::f32(v, "y"));
+            let anchor = match p::str(v, "anchor") {
+                Some("page") => wordcraft_doc::para::Anchor::Page,
+                Some("paragraph") => wordcraft_doc::para::Anchor::Paragraph,
+                _ => wordcraft_doc::para::Anchor::Margin,
+            };
             let sect = super::page::sect(s);
             let size = selected(s).map(|(_, o)| obj_size(&o)).unwrap_or((72.0, 72.0));
             with_float(s, |f| {
                 if f.wrap == Wrap::Inline {
                     f.wrap = Wrap::Square;
                 }
-                f.h_rel = wordcraft_doc::para::Anchor::Margin;
-                f.v_rel = wordcraft_doc::para::Anchor::Margin;
+                f.h_rel = anchor;
+                f.v_rel = anchor;
                 let (tw, th) = (sect.text_width(), sect.text_height());
                 let col = if preset.ends_with("Left") { 0.0 } else if preset.ends_with("Right") { tw - size.0 } else { (tw - size.0) / 2.0 };
                 let row = if preset.starts_with("top") { 0.0 } else if preset.starts_with("bottom") { th - size.1 } else { (th - size.1) / 2.0 };
@@ -215,7 +220,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 f.y = y.unwrap_or(row);
             })
         })
-        .params(r#"{"preset"?: "topLeft|topCenter|topRight|middleLeft|middleCenter|middleRight|bottomLeft|bottomCenter|bottomRight", "x"?: pt, "y"?: pt}"#)
+        .params(r#"{"preset"?: "topLeft|topCenter|topRight|middleLeft|middleCenter|middleRight|bottomLeft|bottomCenter|bottomRight", "x"?: pt, "y"?: pt, "anchor"?: "page|margin|paragraph"}"#)
         .when(has_object),
         CommandSpec::new("arrange.bringForward", "Bring Forward", "Layout › Arrange", |s, _| with_float(s, |f| f.wrap = Wrap::InFrontOfText)).when(has_object),
         CommandSpec::new("arrange.sendBackward", "Send Backward", "Layout › Arrange", |s, _| with_float(s, |f| f.wrap = Wrap::BehindText)).when(has_object),
@@ -302,58 +307,71 @@ pub fn specs() -> Vec<CommandSpec> {
         })
         .params(r#"{"symbol": string}"#),
         CommandSpec::new("equation.insertStructure", "Insert Structure", "Equation Tools › Design › Structures", |s, v| {
-            let kind = p::req_str(v, "kind")?;
-            let snippet = match kind {
-                "fraction" => "(x)/(y)",
-                "script" => "x^{2}",
-                "radical" => "√(x)",
-                "integral" => "∫ x dx",
-                "largeOperator" => "∑ x",
-                "bracket" => "(x)",
-                "function" => "sin(x)",
-                "accent" => "ẋ",
-                "limitLog" => "lim(x)",
-                "operator" => "±",
-                "matrix" => "[a, b; c, d]",
-                _ => "(x)",
+            // The ribbon sends the structure as ready-made linear text (`template`); scripts
+            // and the catalog use the short `kind` ids.
+            let snippet = match (p::str(v, "template"), p::str(v, "kind")) {
+                (Some(t), _) => t.to_string(),
+                (None, Some(k)) => structure_template(k).to_string(),
+                (None, None) => return Err(CmdError::Params("`template` or `kind` required".into())),
             };
-            insert_into_equation(s, snippet)
+            if snippet.len() > 4096 {
+                return Err(CmdError::Params("structure is too long".into()));
+            }
+            insert_into_equation(s, &snippet)
         })
-        .params(r#"{"kind": string}"#),
+        .params(r#"{"template"?: string (linear), "kind"?: "fraction|script|radical|integral|largeOperator|bracket|function|accent|limitLog|operator|matrix"}"#),
         CommandSpec::new("equation.fraction", "Fraction", "Equation Tools › Design › Structures", |s, _| {
-            insert_into_equation(s, "(x)/(y)")
+            insert_into_equation(s, structure_template("fraction"))
         }),
         CommandSpec::new("equation.script", "Script", "Equation Tools › Design › Structures", |s, _| {
-            insert_into_equation(s, "x^{2}")
+            insert_into_equation(s, structure_template("script"))
         }),
         CommandSpec::new("equation.radical", "Radical", "Equation Tools › Design › Structures", |s, _| {
-            insert_into_equation(s, "√(x)")
+            insert_into_equation(s, structure_template("radical"))
         }),
         CommandSpec::new("equation.integral", "Integral", "Equation Tools › Design › Structures", |s, _| {
-            insert_into_equation(s, "∫ x dx")
+            insert_into_equation(s, structure_template("integral"))
         }),
         CommandSpec::new("equation.largeOperator", "Large Operator", "Equation Tools › Design › Structures", |s, _| {
-            insert_into_equation(s, "∑ x")
+            insert_into_equation(s, structure_template("largeOperator"))
         }),
         CommandSpec::new("equation.bracket", "Bracket", "Equation Tools › Design › Structures", |s, _| {
-            insert_into_equation(s, "(x)")
+            insert_into_equation(s, structure_template("bracket"))
         }),
         CommandSpec::new("equation.function", "Function", "Equation Tools › Design › Structures", |s, _| {
-            insert_into_equation(s, "sin(x)")
+            insert_into_equation(s, structure_template("function"))
         }),
         CommandSpec::new("equation.accent", "Accent", "Equation Tools › Design › Structures", |s, _| {
-            insert_into_equation(s, "ẋ")
+            insert_into_equation(s, structure_template("accent"))
         }),
         CommandSpec::new("equation.limitLog", "Limit and Log", "Equation Tools › Design › Structures", |s, _| {
-            insert_into_equation(s, "lim(x)")
+            insert_into_equation(s, structure_template("limitLog"))
         }),
         CommandSpec::new("equation.operator", "Operator", "Equation Tools › Design › Structures", |s, _| {
-            insert_into_equation(s, "±")
+            insert_into_equation(s, structure_template("operator"))
         }),
         CommandSpec::new("equation.matrix", "Matrix", "Equation Tools › Design › Structures", |s, _| {
-            insert_into_equation(s, "[a, b; c, d]")
+            insert_into_equation(s, structure_template("matrix"))
         }),
     ]
+}
+
+/// The linear text a structure id inserts (the same placeholders Word starts you with).
+pub fn structure_template(kind: &str) -> &'static str {
+    match kind {
+        "fraction" => "\\frac{x}{y}",
+        "script" => "x^{2}",
+        "radical" => "\\sqrt{x}",
+        "integral" => "\\int x \\, dx",
+        "largeOperator" => "\\sum_{i=1}^{n} x_i",
+        "bracket" => "(x)",
+        "function" => "\\sin(x)",
+        "accent" => "\\vec{x}",
+        "limitLog" => "\\lim_{x \\to 0}",
+        "operator" => "\\pm",
+        "matrix" => "\\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix}",
+        _ => "(x)",
+    }
 }
 
 /// The first picture/shape in the selection, or just before a collapsed caret.
@@ -406,6 +424,9 @@ pub fn selected_equation(s: &Session) -> Option<(Pos, String, bool)> {
 
 fn equation_edit(s: &mut Session, v: &Value) -> CmdResult {
     let linear = p::req_str(v, "linear")?.to_string();
+    if linear.len() > 8192 {
+        return Err(CmdError::Params("equation is too long".into()));
+    }
     let display = p::bool(v, "display");
     if let Some((pos, _, _)) = selected_equation(s) {
         let para = s.doc.para_mut(pos.story, &pos.path)?;
@@ -448,11 +469,18 @@ fn insert_into_equation(s: &mut Session, text: &str) -> CmdResult {
             } else {
                 linear.push_str(text);
             }
+            if linear.len() > 8192 {
+                return Err(CmdError::Params("equation is too long".into()));
+            }
         }
         para.touch();
         sel_result(s)
     } else {
-        super::type_text(s, text)?;
+        // Nothing to add to: start an equation with this text in it.
+        let props = s.typing_props();
+        let at = super::delete_selection(s)?;
+        let end = s.doc.insert_object(&at, InlineObject::Equation { linear: text.to_string(), display: true }, &props)?;
+        s.sel = Selection::caret(end);
         sel_result(s)
     }
 }
@@ -717,6 +745,82 @@ mod tests {
         let mut b = Vec::new();
         image::DynamicImage::ImageRgba8(img).write_to(&mut std::io::Cursor::new(&mut b), image::ImageFormat::Png).unwrap();
         b
+    }
+
+    /// The selected shape's floating placement, if any.
+    fn shape_float(s: &Session) -> Option<(wordcraft_doc::para::Float, f32, f32)> {
+        let (_, obj) = selected(s)?;
+        let InlineObject::Shape { float, w, h, .. } = obj else { return None };
+        Some((float, w, h))
+    }
+
+    #[test]
+    fn drawn_shape_floats_where_it_was_dragged() {
+        let mut s = Session::new(wordcraft_doc::Document::new());
+        // Without a position the shape goes inline, as before.
+        s.run("insert.shape", &json!({"kind": "roundRect"})).unwrap();
+        let (f, _, _) = shape_float(&s).unwrap();
+        assert_eq!(f.wrap, wordcraft_doc::para::Wrap::Inline);
+        // Drawn on the canvas: floating at the dragged point, on the page.
+        s.run("insert.shape", &json!({"kind": "ellipse", "width": 120, "height": 80, "x": 90, "y": 200, "anchor": "page"})).unwrap();
+        let (f, w, h) = shape_float(&s).unwrap();
+        assert_eq!(f.wrap, wordcraft_doc::para::Wrap::Square);
+        assert_eq!(f.h_rel, wordcraft_doc::para::Anchor::Page);
+        assert_eq!((f.x, f.y), (90.0, 200.0));
+        assert_eq!((w, h), (120.0, 80.0));
+        // The layout places it as a floating shape on a page.
+        let l = s.layout();
+        assert!(l.pages.iter().any(|p| p.items.iter().any(|it| matches!(it, wordcraft_layout::Placed::Shape { .. }))), "a placed shape");
+        // Selection works on the drawn shape.
+        assert!(s.run("shape.fill", &json!({"color": "FF0000"})).is_ok());
+    }
+
+    #[test]
+    fn position_anchor_moves_a_floating_shape() {
+        let mut s = Session::new(wordcraft_doc::Document::new());
+        s.run("insert.shape", &json!({"kind": "rect", "width": 60, "height": 40, "x": 10, "y": 10, "anchor": "page"})).unwrap();
+        s.run("arrange.position", &json!({"x": 150, "y": 260, "anchor": "page"})).unwrap();
+        let (f, _, _) = shape_float(&s).unwrap();
+        assert_eq!((f.x, f.y), (150.0, 260.0));
+        // Dragging an inline shape lifts it into place.
+        s.run("insert.shape", &json!({"kind": "rect", "width": 60, "height": 40})).unwrap();
+        let (f, _, _) = shape_float(&s).unwrap();
+        assert_eq!(f.wrap, wordcraft_doc::para::Wrap::Inline);
+        s.run("arrange.position", &json!({"x": 40, "y": 40, "anchor": "page"})).unwrap();
+        let (f, _, _) = shape_float(&s).unwrap();
+        assert_eq!(f.wrap, wordcraft_doc::para::Wrap::Square);
+        assert_eq!((f.x, f.y), (40.0, 40.0));
+    }
+
+    #[test]
+    fn equations_take_structures_and_symbols() {
+        let mut s = Session::new(wordcraft_doc::Document::new());
+        s.run("insert.equation", &json!({})).unwrap();
+        // Insert › Equation starts a professional (two-dimensional) equation.
+        let (_, _, display) = selected_equation(&s).unwrap();
+        assert!(display, "new equations are professional");
+        assert_eq!(selected_equation(&s).unwrap().1, "", "empty to start");
+        // The ribbon's structures send their linear text as `template`.
+        s.run("equation.insertStructure", &json!({"template": "\\frac{x}{y}"})).unwrap();
+        assert_eq!(selected_equation(&s).unwrap().1, "\\frac{x}{y}");
+        s.run("equation.insertSymbol", &json!({"symbol": "±"})).unwrap();
+        assert_eq!(selected_equation(&s).unwrap().1, "\\frac{x}{y}±");
+        // Short ids also work (scripts, the catalog).
+        s.run("equation.insertStructure", &json!({"kind": "radical"})).unwrap();
+        assert_eq!(selected_equation(&s).unwrap().1, "\\frac{x}{y}±\\sqrt{x}");
+        assert_eq!(structure_template("matrix"), "\\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix}");
+        // Professional and Linear are views of the same equation.
+        s.run("equation.linear", &json!({})).unwrap();
+        assert!(!selected_equation(&s).unwrap().2);
+        s.run("equation.professional", &json!({})).unwrap();
+        assert!(selected_equation(&s).unwrap().2);
+        // Setting the whole linear text works, and the equation lays out without panicking.
+        s.run("equation.edit", &json!({"linear": "x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}"})).unwrap();
+        let l = s.layout();
+        assert!(!l.pages.is_empty());
+        // Too long is refused, not truncated.
+        let huge = "x".repeat(9000);
+        assert!(s.run("equation.edit", &json!({"linear": huge})).is_err());
     }
 
     #[test]

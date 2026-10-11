@@ -3,8 +3,49 @@
 use wordcraft_doc::{Document, Path, Pos, StoryRef};
 use wordcraft_geom::Rect;
 
-use crate::para::ParaLayout;
+use crate::para::{self, ParaLayout};
 use crate::{DocLayout, Page, Placed};
+
+/// Every picture/shape laid out on the pages, with its document position and page rectangle
+/// (page coordinates, points). Inline objects are measured from their line's cluster, floating
+/// ones from `Placed::Image`/`Placed::Shape`.
+pub fn object_rects(doc: &Document, pages: &[Page]) -> Vec<(Pos, usize, Rect)> {
+    let mut out = Vec::new();
+    for (pi, page) in pages.iter().enumerate() {
+        for it in &page.items {
+            match it {
+                Placed::Image { rect, story, path, off, .. } => {
+                    out.push((Pos { story: *story, path: path.clone(), off: *off }, pi, *rect));
+                }
+                Placed::Shape { rect, story, path, off, .. } => {
+                    out.push((Pos { story: *story, path: path.clone(), off: *off }, pi, *rect));
+                }
+                Placed::Lines { story, path, para, l0, l1, x, y } => {
+                    let Some(first) = para.lines.get(*l0) else { continue };
+                    for li in *l0..*l1 {
+                        let Some(line) = para.lines.get(li) else { continue };
+                        let base = y + (line.baseline - first.top);
+                        for k in line.c0..line.c1 {
+                            let Some(c) = para.clusters.get(k) else { continue };
+                            let para::ClKind::Object(oi) = c.kind else { continue };
+                            if c.obj_h <= 0.0 {
+                                continue; // floating: drawn from its own Placed item
+                            }
+                            let floating = doc.para(*story, path).and_then(|p| p.objects.get(oi)).is_some_and(|o| o.is_floating());
+                            if floating {
+                                continue;
+                            }
+                            let cx = x + line.xs.get(k - line.c0).copied().unwrap_or(0.0);
+                            out.push((Pos { story: *story, path: path.clone(), off: c.start }, pi, Rect::new(cx, base - c.obj_h, c.adv, c.obj_h)));
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    out
+}
 
 /// Caret geometry on a page.
 #[derive(Clone, Copy, Debug, PartialEq)]

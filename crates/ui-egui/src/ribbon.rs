@@ -18,6 +18,10 @@ fn in_equation(app: &WordApp) -> bool {
     wordcraft_engine::cmd::objects::selected_equation(&app.session).is_some()
 }
 
+fn in_object(app: &WordApp) -> bool {
+    wordcraft_engine::cmd::objects::selected(&app.session).is_some()
+}
+
 pub fn show(app: &mut WordApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
     // Tab strip.
@@ -35,8 +39,11 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                 if in_equation(app) {
                     tabs.push("Equation Design");
                 }
+                if in_object(app) {
+                    tabs.push("Shape Format");
+                }
                 for tab in tabs {
-                    let contextual = tab.starts_with("Table ") || tab.starts_with("Equation ");
+                    let contextual = tab.starts_with("Table ") || tab.starts_with("Equation ") || tab == "Shape Format";
                     let shown = if tab == "Equation Design" { tl!("Equation") } else { tl!(tab) };
                     let w = ui.ctx().fonts_mut(|f| f.layout_no_wrap(shown.to_string(), medium(12.5), t.text).size().x) + 18.0;
                     let (r, resp) = ui.allocate_exact_size(vec2(w, 30.0), Sense::click());
@@ -122,6 +129,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                         "Table Design" => table_design(app, ui),
                         "Table Layout" => table_layout(app, ui),
                         "Equation Design" | "Equation" => equation_design(app, ui),
+                        "Shape Format" => shape_format(app, ui),
                         _ => home(app, ui),
                     }
                 });
@@ -1293,11 +1301,6 @@ fn shapes_picker(ui: &mut Ui, app: &mut WordApp) {
                 ],
             );
             ui.separator();
-            let canvas_resp = ui.add(egui::Button::new(tl!("New Drawing Canvas")).min_size(vec2(240.0, 24.0)));
-            if canvas_resp.clicked() {
-                let _ = app.run("insert.shape", json!({"kind": "drawingCanvas"}));
-                ui.close();
-            }
         });
     });
 }
@@ -1327,13 +1330,164 @@ fn shape_section(ui: &mut Ui, app: &mut WordApp, title: &str, shapes: &[ShapeKin
                 }
             }
             if resp.on_hover_text(tl!(k.label())).clicked() {
-                let _ = app.run("insert.shape", json!({"kind": k.ooxml_prst()}));
+                // Word arms the shape tool: the next canvas drag draws it. A plain click on the
+                // page drops a default-sized shape; Esc cancels.
+                app.canvas.shape_tool = Some(k);
+                app.status_msg = Some((crate::shapes::tool_hint(k), crate::now_ms()));
                 ui.close();
             }
             if i % 10 == 9 {
                 ui.end_row();
             }
         }
+    });
+}
+
+/// Shape Format (and Picture Format): the contextual tab for the selected picture or shape.
+fn shape_format(app: &mut WordApp, ui: &mut Ui) {
+    let shape = matches!(wordcraft_engine::cmd::objects::selected(&app.session), Some((_, wordcraft_doc::para::InlineObject::Shape { .. })));
+    let picture = matches!(wordcraft_engine::cmd::objects::selected(&app.session), Some((_, wordcraft_doc::para::InlineObject::Image { .. })));
+    group(ui, "Insert Shapes", None, app, |ui, app| {
+        menu_button(ui, app, "shapes", Some("Change\nShape"), "Change Shape", true, |ui, app| {
+            for (label, kind) in [
+                ("Rectangle", "rect"),
+                ("Rounded Rectangle", "roundRect"),
+                ("Oval", "ellipse"),
+                ("Triangle", "triangle"),
+                ("Right Triangle", "rtTriangle"),
+                ("Diamond", "diamond"),
+                ("Pentagon", "homePlate"),
+                ("Right Arrow", "rightArrow"),
+                ("Star: 5-Point", "star5"),
+                ("Line", "line"),
+            ] {
+                mi(ui, app, label, "shape.change", json!({"kind": kind}));
+            }
+        });
+        if shape {
+            small(ui, app, "textBox", Some("Edit\nText"), "Draw a Text Box", "insert.textBox", json!({}), false);
+        }
+    });
+    group(ui, "Shape Styles", None, app, |ui, app| {
+        menu_button(ui, app, "colors", Some("Shape\nFill"), "Shape Fill", true, |ui, app| {
+            mi(ui, app, "No Fill", "shape.fill", json!({"color": null}));
+            let theme = app.session.doc.settings.theme_colors.clone();
+            if let Some(hex) = color_grid(ui, &theme) {
+                let _ = app.run("shape.fill", json!({"color": hex}));
+                ui.close();
+            }
+        });
+        menu_button(ui, app, "outline", Some("Shape\nOutline"), "Shape Outline", true, |ui, app| {
+            for (l, w) in [("¼ pt", 0.25), ("½ pt", 0.5), ("1 pt", 1.0), ("1½ pt", 1.5), ("2¼ pt", 2.25), ("3 pt", 3.0), ("6 pt", 6.0)] {
+                mi(ui, app, l, "shape.outline", json!({"width": w}));
+            }
+            ui.separator();
+            mi(ui, app, "No Outline", "shape.outline", json!({"color": null}));
+            let theme = app.session.doc.settings.theme_colors.clone();
+            if let Some(hex) = color_grid(ui, &theme) {
+                let _ = app.run("shape.outline", json!({"color": hex}));
+                ui.close();
+            }
+        });
+        if picture {
+            menu_button(ui, app, "effects", Some("Picture\nEffects"), "Picture Effects", true, |ui, app| {
+                for (l, e) in [("Blur", "blur"), ("Sharpen", "sharpen"), ("Invert", "invert"), ("Posterize", "posterize"), ("Pixelate", "pixelate")] {
+                    mi(ui, app, l, "picture.effects", json!({"effect": e}));
+                }
+            });
+        }
+    });
+    group(ui, "Arrange", None, app, |ui, app| {
+        menu_button(ui, app, "object", Some("Position"), "Position Object on Page", true, |ui, app| {
+            for (l, k) in [
+                ("Top Left", "topLeft"),
+                ("Top Center", "topCenter"),
+                ("Top Right", "topRight"),
+                ("Middle Left", "middleLeft"),
+                ("Middle Center", "middleCenter"),
+                ("Middle Right", "middleRight"),
+                ("Bottom Left", "bottomLeft"),
+                ("Bottom Center", "bottomCenter"),
+                ("Bottom Right", "bottomRight"),
+            ] {
+                mi(ui, app, l, "arrange.position", json!({"preset": k}));
+            }
+            ui.separator();
+            mi(ui, app, "In Line with Text", "arrange.wrap", json!({"wrap": "inline"}));
+        });
+        menu_button(ui, app, "object", Some("Wrap\nText"), "Wrap Text", true, |ui, app| {
+            for (l, k) in [
+                ("In Line with Text", "inline"),
+                ("Square", "square"),
+                ("Tight", "tight"),
+                ("Through", "through"),
+                ("Top and Bottom", "topAndBottom"),
+                ("Behind Text", "behindText"),
+                ("In Front of Text", "inFrontOfText"),
+            ] {
+                mi(ui, app, l, "arrange.wrap", json!({"wrap": k}));
+            }
+        });
+        menu_button(ui, app, "align", Some("Align"), "Align Objects", true, |ui, app| {
+            for (l, k) in [("Left", "left"), ("Center", "center"), ("Right", "right")] {
+                mi(ui, app, l, "arrange.align", json!({"value": k}));
+            }
+        });
+        stack(ui, |ui| {
+            small(ui, app, "bringForward", Some("Bring\nForward"), "Bring Forward", "arrange.bringForward", json!({}), false);
+            small(ui, app, "sendBackward", Some("Send\nBackward"), "Send Backward", "arrange.sendBackward", json!({}), false);
+        });
+        menu_button(ui, app, "selectionPane", Some("Selection\nPane"), "Selection Pane", true, |ui, app| {
+            let list = app.session.run("arrange.selectionPane", &json!({})).unwrap_or_default();
+            let items: Vec<(u64, String)> = list
+                .as_array()
+                .map(|a| a.iter().filter_map(|o| Some((o.get("index")?.as_u64()?, o.get("name")?.as_str()?.to_string()))).collect())
+                .unwrap_or_default();
+            if items.is_empty() {
+                ui.label(tl!("(no objects)"));
+            }
+            for (i, name) in items {
+                if ui.button(name).clicked() {
+                    let _ = app.run("select.objects", json!({"index": i}));
+                    ui.close();
+                }
+            }
+        });
+    });
+    group(ui, "Size", None, app, |ui, app| {
+        let (mut w, mut h) = wordcraft_engine::cmd::objects::selected(&app.session)
+            .map(|(_, o)| match o {
+                wordcraft_doc::para::InlineObject::Image { w, h, .. } | wordcraft_doc::para::InlineObject::Shape { w, h, .. } => (w, h),
+                _ => (0.0, 0.0),
+            })
+            .unwrap_or((0.0, 0.0));
+        ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing = vec2(4.0, 2.0);
+            for (label, value, key) in [("Height", &mut h, "height"), ("Width", &mut w, "width")] {
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new(tl!(label)).font(regular(11.0)));
+                    let r = ui.add(egui::DragValue::new(value).speed(1.0).range(1.0..=2000.0).max_decimals(1).suffix(" pt"));
+                    if r.drag_started() {
+                        app.session.join_next_undo();
+                    }
+                    if r.changed() {
+                        let _ = app.run("picture.size", json!({key: *value}));
+                    }
+                });
+            }
+        });
+    });
+    group(ui, "Accessibility", None, app, |ui, app| {
+        menu_button(ui, app, "accessibility", Some("Alt\nText"), "Alt Text", true, |ui, app| {
+            let mut alt = match wordcraft_engine::cmd::objects::selected(&app.session) {
+                Some((_, wordcraft_doc::para::InlineObject::Image { alt, .. })) => alt.clone(),
+                _ => String::new(),
+            };
+            let r = ui.add(egui::TextEdit::multiline(&mut alt).desired_width(240.0).desired_rows(3));
+            if r.changed() {
+                let _ = app.run("picture.altText", json!({"text": alt}));
+            }
+        });
     });
 }
 
